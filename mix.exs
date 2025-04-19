@@ -9,7 +9,11 @@ defmodule Sgp4Ex.MixProject do
       start_permanent: Mix.env() == :prod,
       deps: deps(),
       compilers: [:makesgp4] ++ Mix.compilers(),
-      aliases: aliases()
+      aliases: aliases(),
+      description: "Elixir wrapper for Vallado's SGP4 propagator implementation",
+      name: "Sgp4Ex",
+      source_url: "https://github.com/jmcguigs/sgp4_ex",
+      package: package()
     ]
   end
 
@@ -35,9 +39,16 @@ defmodule Sgp4Ex.MixProject do
 
   # Run "mix help deps" to learn about dependencies.
   defp deps do
+    []
+  end
+
+  defp package() do
     [
-      # {:dep_from_hexpm, "~> 0.3.0"},
-      # {:dep_from_git, git: "https://github.com/elixir-lang/my_dep.git", tag: "0.1.0"}
+      name: "sgp4_ex",
+      files: ["lib", "cpp_src", "mix.exs", "README.md", "LICENSE"],
+      maintainers: ["jmcguigs"],
+      licenses: ["MIT"],
+      links: %{"GitHub" => "https://github.com/jmcguigs/sgp4_ex"}
     ]
   end
 end
