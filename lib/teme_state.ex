@@ -4,9 +4,9 @@ defmodule Sgp4Ex.TemeState do
   """
 
   @type t :: %__MODULE__{
-    position: {float(), float(), float()},
-    velocity: {float(), float(), float()}
-  }
+          position: {float(), float(), float()},
+          velocity: {float(), float(), float()}
+        }
 
   defstruct [
     :position,

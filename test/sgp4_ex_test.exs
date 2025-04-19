@@ -19,8 +19,10 @@ defmodule Sgp4ExTest do
     case result do
       {:ok, data} ->
         IO.inspect(data, label: "Data from NIF")
+
       {:error, reason} ->
         flunk("NIF returned error: #{inspect(reason)}")
+
       _ ->
         flunk("Unexpected result from NIF: #{inspect(result)}")
     end
@@ -41,6 +43,7 @@ defmodule Sgp4ExTest do
         assert tle.international_designator == "98067A"
         assert tle.mean_motion_dot == 0.00001234
         assert tle.eccentricity == 0.0001234
+
       {:error, reason} ->
         flunk("Failed to parse TLE: #{inspect(reason)}")
     end
@@ -52,11 +55,12 @@ defmodule Sgp4ExTest do
     line2 = "2 25544  51.6445 123.4567 0001234 123.4567 234.5678 15.50123467    12"
 
     # Create a TLE struct
-    tle = Sgp4Ex.parse_tle(line1, line2)
-    |> case do
-      {:ok, tle} -> tle
-      {:error, reason} -> flunk("Failed to parse TLE: #{inspect(reason)}")
-    end
+    tle =
+      Sgp4Ex.parse_tle(line1, line2)
+      |> case do
+        {:ok, tle} -> tle
+        {:error, reason} -> flunk("Failed to parse TLE: #{inspect(reason)}")
+      end
 
     epoch = DateTime.add(tle.epoch, 1, :day)
 
@@ -64,6 +68,7 @@ defmodule Sgp4ExTest do
     case Sgp4Ex.propagate_tle_to_epoch(tle, epoch) do
       {:ok, data} ->
         IO.inspect(data, label: "TEME state")
+
       {:error, reason} ->
         flunk("NIF returned error: #{inspect(reason)}")
     end

@@ -3,8 +3,11 @@ defmodule SGP4NIF do
 
   def load_nif do
     nif_path = Path.join(:code.priv_dir(:sgp4_ex), "sgp4_nif")
+
     case :erlang.load_nif(String.to_charlist(nif_path), 0) do
-      :ok -> :ok
+      :ok ->
+        :ok
+
       {:error, reason} ->
         IO.warn("Failed to load NIF: #{inspect(reason)}")
         {:error, reason}

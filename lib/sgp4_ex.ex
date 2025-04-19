@@ -8,7 +8,25 @@ defmodule Sgp4Ex do
 
   @microseconds_per_day 86_400 * 1_000_000
 
-  @doc "parse a two line element set (TLE) from a string"
+  @doc """
+  Parse a TLE (Two-Line Element) set into a TLE struct.
+  The TLE consists of two lines, each with a specific format.
+
+  ## Parameters
+  - `line1`: The first line of the TLE.
+  - `line2`: The second line of the TLE.
+
+  ## Returns
+  - `{:ok, TLE.t()}`: The parsed TLE struct.
+  - `{:error, String.t()}`: An error message if the parsing fails.
+
+  ## Example
+      iex> line1 = "1 25544U 98067A   21275.54791667  .00001264  00000-0  39629-5 0  9993"
+      iex> line2 = "2 25544  51.6456  23.4367 0001234  45.6789 314.3210 15.48999999    12"
+      iex> Sgp4Ex.parse_tle(line1, line2)
+      {:ok, %Sgp4Ex.TLE{...}}
+  """
+  @spec parse_tle(String.t(), String.t()) :: {:ok, TLE.t()} | {:error, String.t()}
   def parse_tle(line1, line2) do
     # check to ensure each line is 69 characters
     case {String.length(line1), String.length(line2)} do
@@ -71,8 +89,7 @@ defmodule Sgp4Ex do
             mean_motion_double_dot: mean_motion_double_dot,
             bstar: b_star,
             ephemeris_type: String.to_integer(String.at(line1, 62)),
-            elset_number:
-              String.to_integer(String.replace(String.slice(line1, 64..67), " ", "")),
+            elset_number: String.to_integer(String.replace(String.slice(line1, 64..67), " ", "")),
 
             # line 2 parameters
             line2: line2,
@@ -80,8 +97,10 @@ defmodule Sgp4Ex do
             raan_deg: String.to_float(String.replace(String.slice(line2, 17..24), " ", "")),
             eccentricity:
               String.to_float(String.replace("0." <> String.slice(line2, 26..32), " ", "")),
-            arg_perigee_deg: String.to_float(String.replace(String.slice(line2, 34..41), " ", "")),
-            mean_anomaly_deg: String.to_float(String.replace(String.slice(line2, 43..50), " ", "")),
+            arg_perigee_deg:
+              String.to_float(String.replace(String.slice(line2, 34..41), " ", "")),
+            mean_anomaly_deg:
+              String.to_float(String.replace(String.slice(line2, 43..50), " ", "")),
             mean_motion: String.to_float(String.replace(String.slice(line2, 52..62), " ", "")),
             rev_number: String.to_integer(String.replace(String.slice(line2, 63..67), " ", ""))
           }
@@ -96,21 +115,43 @@ defmodule Sgp4Ex do
     end
   end
 
-  @spec propagate_tle_to_epoch(TLE.t(), DateTime.t()) :: {:ok, map()} | {:error, any()}
+  @doc """
+  Propagate a TLE to a specific epoch using the SGP4 algorithm.
+  The epoch is the time to which the TLE should be propagated.
+
+  ## Parameters
+  - `tle`: The TLE data structure containing the satellite's orbital elements.
+  - `epoch`: The epoch to which the TLE should be propagated.
+
+  ## Returns
+  - `{:ok, TemeState.t()}`: The propagated Teme state of the satellite.
+  - `{:error, String.t()}`: An error message if the propagation fails.
+
+  ## Example
+      iex> tle = Sgp4Ex.parse_tle(
+      ...>   line1: "1 25544U 98067A   21275.54791667  .00001264  00000-0  39629-5 0  9993",
+      ...>   line2: "2 25544  51.6456  23.4367 0001234  45.6789 314.3210 15.48999999    12"
+      ...> )
+      iex> epoch = ~U[2021-10-02T14:00:00Z]
+      iex> Sgp4Ex.propagate_tle_to_epoch(tle, epoch)
+      {:ok, %Sgp4Ex.TemeState{position: {x, y, z}, velocity: {vx, vy, vz}}}
+  """
+  @spec propagate_tle_to_epoch(TLE.t(), DateTime.t()) ::
+          {:ok, TemeState.t()} | {:error, String.t()}
   def propagate_tle_to_epoch(tle, epoch) do
-      tsince = DateTime.diff(epoch, tle.epoch, :millisecond) / 1.0e3
+    tsince = DateTime.diff(epoch, tle.epoch, :millisecond) * 1.0e-3
 
-      # Call the NIF function to propagate the TLE
-      case SGP4NIF.propagate_tle(tle.line1, tle.line2, tsince) do
-        {:ok, data} ->
-          {:ok, %TemeState{
-            position: elem(data, 0),
-            velocity: elem(data, 1)
-          }
-        }
+    # Call the NIF function to propagate the TLE
+    case SGP4NIF.propagate_tle(tle.line1, tle.line2, tsince) do
+      {:ok, data} ->
+        {:ok,
+         %TemeState{
+           position: elem(data, 0),
+           velocity: elem(data, 1)
+         }}
 
-        {:error, reason} ->
-          {:error, reason}
-      end
+      {:error, reason} ->
+        {:error, reason}
+    end
   end
 end

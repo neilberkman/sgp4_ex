@@ -1,11 +1,10 @@
 # Sgp4Ex
 
-**TODO: Add description**
+`Sgp4Ex` is an elixir NIF wrapper for the SGP4 source code available at https://celestrak.org/publications/AIAA/2006-6753/ - it allows propagation of Two-Line Element sets (TLEs) to get TEME state vectors describing the position/velocity of satellites.
 
 ## Installation
 
-If [available in Hex](https://hex.pm/docs/publish), the package can be installed
-by adding `sgp4_ex` to your list of dependencies in `mix.exs`:
+`Sgp4Ex` can be installed by adding it to `mix.exs`:
 
 ```elixir
 def deps do
@@ -14,8 +13,3 @@ def deps do
   ]
 end
 ```
-
-Documentation can be generated with [ExDoc](https://github.com/elixir-lang/ex_doc)
-and published on [HexDocs](https://hexdocs.pm). Once published, the docs can
-be found at <https://hexdocs.pm/sgp4_ex>.
-
