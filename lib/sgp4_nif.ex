@@ -2,7 +2,7 @@ defmodule SGP4NIF do
   @on_load :load_nif
 
   def load_nif do
-    nif_path = Path.join(:code.priv_dir(:sgp4_nif), "sgp4_nif")
+    nif_path = Path.join(:code.priv_dir(:sgp4_ex), "sgp4_nif")
     :erlang.load_nif(String.to_charlist(nif_path), 0)
   end
 

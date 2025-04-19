@@ -1,9 +1,9 @@
-defmodule Mix.Tasks.Compile.Sgp4Make do
+defmodule Mix.Tasks.Compile.Makesgp4 do
   use Mix.Task.Compiler
 
   @shortdoc "Compiles C++ code for SGP4 NIF using Makefile"
 
-  @impl true
+  @impl Mix.Task.Compiler
   def run(_args) do
     # Run `make` in the project root
     case System.cmd("make", [], stderr_to_stdout: true) do
@@ -17,7 +17,7 @@ defmodule Mix.Tasks.Compile.Sgp4Make do
     end
   end
 
-  @impl true
+  @impl Mix.Task.Compiler
   def clean do
     # Run `make clean`
     case System.cmd("make", ["clean"], stderr_to_stdout: true) do

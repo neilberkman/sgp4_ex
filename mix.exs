@@ -8,7 +8,8 @@ defmodule Sgp4Ex.MixProject do
       elixir: "~> 1.17",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
-      compilers: [:sgp4_make] ++ Mix.compilers()
+      compilers: [:makesgp4] ++ Mix.compilers(),
+      aliases: aliases()
     ]
   end
 
@@ -18,6 +19,18 @@ defmodule Sgp4Ex.MixProject do
       extra_applications: [:logger],
       mod: {Sgp4Ex.Application, []}
     ]
+  end
+
+  defp aliases do
+    [
+      compile: ["load_tasks", "compile"],
+      load_tasks: &load_makesgp4/1
+    ]
+  end
+
+  # need to pre-load the task to ensure it is available
+  defp load_makesgp4(_) do
+    Code.require_file("lib/mix/tasks/compile/makesgp4.ex")
   end
 
   # Run "mix help deps" to learn about dependencies.

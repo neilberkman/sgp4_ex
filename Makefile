@@ -1,23 +1,40 @@
-ERTS_INCLUDE_DIR ?= $(shell erl -eval 'io:format("~s~n", [code:lib_dir(erts, include)])' -s init stop -noshell)
-CFLAGS = -fPIC -I$(ERTS_INCLUDE_DIR) -I./c_src -Wall -O2
-LDFLAGS = -shared
+# Basic variables
+CC = gcc
 CXX = g++
+CFLAGS = -fPIC -Wall -O2
+CXXFLAGS = -fPIC -Wall -O2 -std=c++11
+LDFLAGS = -shared
 
-SOURCES = cpp_src/sgp4_nif.cpp cpp_src/SGP4.cpp
-OBJECTS = $(patsubst cpp_src/%.cpp,build/%.o,$(SOURCES))
-TARGET = sgp4_nif.so
+# Erlang paths - dynamically find the correct include path
+ERL_INCLUDE_PATH = $(shell erl -eval 'io:format("~s~n", [lists:concat([code:root_dir(), "/erts-", erlang:system_info(version), "/include"])])' -s init stop -noshell)
 
-all: $(TARGET)
+# Output directories
+PRIV_DIR = priv
+BUILD_DIR = build
 
-$(TARGET): $(OBJECTS)
-	@mkdir -p priv
-	$(CXX) $(OBJECTS) -o $@ $(LDFLAGS)
+# Create directories if they don't exist
+$(shell mkdir -p $(PRIV_DIR) $(BUILD_DIR))
 
-build/%.o: cpp_src/%.cpp
-	@mkdir -p build
-	$(CXX) $(CFLAGS) -c $< -o $@
+# Source files
+CPP_SRC = $(wildcard cpp_src/*.cpp)
+CPP_OBJ = $(CPP_SRC:cpp_src/%.cpp=$(BUILD_DIR)/%.o)
+
+# Target shared object
+TARGET_SO = $(PRIV_DIR)/sgp4_nif.so
+
+# Compile flags with includes
+CXXFLAGS += -I$(ERL_INCLUDE_PATH) -Icpp_src
+
+# Rules
+all: $(TARGET_SO)
+
+$(BUILD_DIR)/%.o: cpp_src/%.cpp
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+$(TARGET_SO): $(CPP_OBJ)
+	$(CXX) $(LDFLAGS) -o $@ $^
 
 clean:
-	rm -rf build priv
+	rm -rf $(BUILD_DIR)/* $(TARGET_SO)
 
 .PHONY: all clean
