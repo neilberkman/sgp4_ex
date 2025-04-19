@@ -27,7 +27,7 @@ static ERL_NIF_TERM propagate_tle(ErlNifEnv* env, int argc, const ERL_NIF_TERM a
     // Initialize satellite record
     elsetrec satrec;
     char typerun = 'c'; // Catalog mode
-    char typeinput = 'm'; // Minutes from epoch
+    char typeinput = 's'; // Seconds from epoch
     char opsmode = 'i'; // Improved mode
     gravconsttype whichconst = wgs72; // WGS-72 constants
 
@@ -53,15 +53,15 @@ static ERL_NIF_TERM propagate_tle(ErlNifEnv* env, int argc, const ERL_NIF_TERM a
                                 enif_make_string(env, error_msg, ERL_NIF_LATIN1));
     }
 
-    // Create return tuple: {:ok, {position, velocity}}
+    // Create return tuple: {:ok, {position, velocity}} (return in base SI units)
     ERL_NIF_TERM pos = enif_make_tuple3(env,
-        enif_make_double(env, r[0]),
-        enif_make_double(env, r[1]),
-        enif_make_double(env, r[2]));
+        enif_make_double(env, r[0] * 1000),
+        enif_make_double(env, r[1] * 1000),
+        enif_make_double(env, r[2] * 1000));
     ERL_NIF_TERM vel = enif_make_tuple3(env,
-        enif_make_double(env, v[0]),
-        enif_make_double(env, v[1]),
-        enif_make_double(env, v[2]));
+        enif_make_double(env, v[0] * 1000),
+        enif_make_double(env, v[1] * 1000),
+        enif_make_double(env, v[2] * 1000));
     ERL_NIF_TERM state = enif_make_tuple2(env, pos, vel);
     return enif_make_tuple2(env, enif_make_atom(env, "ok"), state);
 }
