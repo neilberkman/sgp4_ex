@@ -4,7 +4,7 @@ defmodule Sgp4Ex.MixProject do
   def project do
     [
       app: :sgp4_ex,
-      version: "0.1.1",
+      version: "0.1.2",
       elixir: "~> 1.17",
       start_permanent: Mix.env() == :prod,
       deps: deps(),
@@ -45,7 +45,7 @@ defmodule Sgp4Ex.MixProject do
   defp package() do
     [
       name: "sgp4_ex",
-      files: ["lib", "cpp_src", "mix.exs", "README.md", "LICENSE"],
+      files: ["lib", "cpp_src", "mix.exs", "README.md", "LICENSE", "Makefile"],
       maintainers: ["jmcguigs"],
       licenses: ["MIT"],
       links: %{"GitHub" => "https://github.com/jmcguigs/sgp4_ex"}
