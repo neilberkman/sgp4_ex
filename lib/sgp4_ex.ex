@@ -274,11 +274,60 @@ defmodule Sgp4Ex do
     # Call the NIF function to propagate the TLE
     case apply(SGP4NIF, :propagate_tle, [tle.line1, tle.line2, tsince]) do
       {:ok, data} ->
+        # NIF returns position in meters and velocity in m/s
+        # Convert to km and km/s for consistency
+        {x_m, y_m, z_m} = elem(data, 0)
+        {vx_m, vy_m, vz_m} = elem(data, 1)
+
         {:ok,
          %TemeState{
-           position: elem(data, 0),
-           velocity: elem(data, 1)
+           position: {x_m / 1000.0, y_m / 1000.0, z_m / 1000.0},
+           velocity: {vx_m / 1000.0, vy_m / 1000.0, vz_m / 1000.0}
          }}
+
+      {:error, reason} ->
+        {:error, reason}
+    end
+  end
+
+  @doc """
+  Propagate a TLE to geodetic coordinates at a specific epoch.
+
+  This is a convenience function that propagates the satellite position and
+  converts it to geodetic coordinates (latitude, longitude, altitude).
+
+  ## Parameters
+  - `tle`: The TLE data structure containing the satellite's orbital elements
+  - `epoch`: The UTC datetime to which the TLE should be propagated
+
+  ## Returns
+  - `{:ok, %{latitude: float, longitude: float, altitude_km: float}}` where:
+    - `latitude`: Geodetic latitude in degrees (-90 to 90)
+    - `longitude`: Geodetic longitude in degrees (-180 to 180)
+    - `altitude_km`: Height above WGS84 ellipsoid in kilometers
+  - `{:error, String.t()}`: An error message if propagation fails
+
+  ## Example
+      iex> {:ok, tle} = Sgp4Ex.parse_tle(
+      ...>   "1 25544U 98067A   21275.54791667  .00001264  00000-0  39629-5 0  9993",
+      ...>   "2 25544  51.6456  23.4367 0001234  45.6789 314.3210 15.48999999    12"
+      ...> )
+      iex> epoch = ~U[2021-10-02T14:00:00Z]
+      iex> case Sgp4Ex.propagate_to_geodetic(tle, epoch) do
+      ...>   {:ok, %{latitude: lat, longitude: lon, altitude_km: alt}} when is_float(lat) and is_float(lon) and is_float(alt) -> :ok
+      ...>   _ -> :error
+      ...> end
+      :ok
+  """
+  @spec propagate_to_geodetic(TLE.t(), DateTime.t()) ::
+          {:ok, %{latitude: float(), longitude: float(), altitude_km: float()}}
+          | {:error, String.t()}
+  def propagate_to_geodetic(%TLE{} = tle, %DateTime{} = epoch) do
+    alias Sgp4Ex.CoordinateSystems
+
+    case propagate_tle_to_epoch(tle, epoch) do
+      {:ok, %TemeState{position: position}} ->
+        CoordinateSystems.teme_to_geodetic(position, epoch)
 
       {:error, reason} ->
         {:error, reason}
