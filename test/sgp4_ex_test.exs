@@ -14,7 +14,7 @@ defmodule Sgp4ExTest do
     tsince = 120.0
 
     # Call the NIF function
-    result = SGP4NIF.propagate_tle(line1, line2, tsince)
+    result = apply(SGP4NIF, :propagate_tle, [line1, line2, tsince])
 
     case result do
       {:ok, data} ->

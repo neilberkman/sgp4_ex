@@ -14,10 +14,9 @@ defmodule SGP4NIF do
     end
   end
 
-  @dialyzer {:no_match, propagate_tle: 3}
   @spec propagate_tle(binary(), binary(), float()) :: {:ok, map()} | {:error, any()}
   def propagate_tle(_line1, _line2, _tsince) do
     # fallback to return an error instead of raising
-    {:error, :nif_not_loaded}
+    raise "NIF not loaded"
   end
 end
