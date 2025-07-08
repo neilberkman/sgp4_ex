@@ -24,3 +24,7 @@ sgp4_ex-*.tar
 
 # Temporary files, for example, from tests.
 /tmp/
+
+# NIF build artifacts
+/priv/
+/build/

@@ -3,7 +3,11 @@ CC = gcc
 CXX = g++
 CFLAGS = -fPIC -Wall -O2
 CXXFLAGS = -fPIC -Wall -O2 -std=c++11
+ifeq ($(shell uname -s), Darwin)
+LDFLAGS = -shared -undefined dynamic_lookup
+else
 LDFLAGS = -shared
+endif
 
 # Erlang paths - dynamically find the correct include path
 ERL_INCLUDE_PATH = $(shell erl -eval 'io:format("~s~n", [lists:concat([code:root_dir(), "/erts-", erlang:system_info(version), "/include"])])' -s init stop -noshell)
