@@ -5,14 +5,24 @@ defmodule Mix.Tasks.Compile.Makesgp4 do
 
   @impl Mix.Task.Compiler
   def run(_args) do
-    # Run `make` in the project root
-    case System.cmd("make", [], stderr_to_stdout: true) do
-      {output, 0} ->
-        Mix.shell().info(output)
-        :ok
+    # Define the output directory for the NIF
+    priv_dir = Path.join([Mix.Project.build_path(), "priv"])
+    nif_so = Path.join(priv_dir, "sgp4_nif.so")
 
-      {output, exit_code} ->
-        Mix.shell().error("Makefile compilation failed with exit code #{exit_code}:\n#{output}")
+    # Ensure the priv directory exists
+    File.mkdir_p!(priv_dir)
+
+    # Run `make` and capture the output
+    case System.cmd("make", [], into: IO.stream(:stdio, :line), stderr_to_stdout: true) do
+      0 ->
+        # After successful compilation, copy the NIF to the priv directory
+        # This assumes the Makefile places the compiled NIF in a known location, e.g., "priv/sgp4_nif.so"
+        source_nif = Path.join(File.cwd!(), "priv/sgp4_nif.so")
+        File.cp!(source_nif, nif_so)
+        {:ok, [nif_so]}
+
+      exit_code ->
+        Mix.shell().error("Makefile compilation failed with exit code #{exit_code}")
         {:error, :make_failed}
     end
   end
