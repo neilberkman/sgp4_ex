@@ -53,11 +53,11 @@ defmodule Sgp4Ex.CoordinateSystems do
     # Calculate Greenwich Mean Sidereal Time
     gmst_rad = calculate_gmst(datetime)
 
-    # Rotation matrix from TEME to ECEF (rotation about Z-axis by -GMST)
+    # Rotation matrix from TEME to ECEF (rotation about Z-axis by GMST)
     cos_gmst = cos(gmst_rad)
     sin_gmst = sin(gmst_rad)
 
-    # Apply rotation
+    # Apply rotation by GMST
     x_ecef = cos_gmst * x_teme + sin_gmst * y_teme
     y_ecef = -sin_gmst * x_teme + cos_gmst * y_teme
     z_ecef = z_teme
@@ -137,8 +137,13 @@ defmodule Sgp4Ex.CoordinateSystems do
     # GMST at 0h UT1 (in degrees)
     gmst0 = 100.46061837 + 36_000.770053608 * t + 0.000387933 * t * t
 
-    # Add rotation for time of day
-    ut_hours = datetime.hour + datetime.minute / 60.0 + datetime.second / 3600.0
+    # Add rotation for time of day (including microseconds)
+    microseconds = elem(datetime.microsecond, 0)
+
+    ut_hours =
+      datetime.hour + datetime.minute / 60.0 + datetime.second / 3600.0 +
+        microseconds / 3_600_000_000.0
+
     gmst = gmst0 + 360.98564724 * ut_hours / 24.0
 
     # Convert to radians and normalize to [0, 2π]
@@ -146,27 +151,34 @@ defmodule Sgp4Ex.CoordinateSystems do
     rem_float(gmst_rad, 2.0 * pi())
   end
 
-  # Convert DateTime to Julian Date
+  # Convert DateTime to Julian Date (Meeus algorithm, referenced to 0h UTC)
   defp datetime_to_julian_date(datetime) do
-    {year, month, day} = {datetime.year, datetime.month, datetime.day}
+    year = datetime.year
+    month = datetime.month
+    day = datetime.day
 
     # Handle January and February
-    {year, month} =
-      if month <= 2 do
-        {year - 1, month + 12}
-      else
-        {year, month}
-      end
+    a = floor((14 - month) / 12)
+    y = year + 4800 - a
+    m = month + 12 * a - 3
 
-    a = div(year, 100)
-    b = 2 - a + div(a, 4)
+    # Calculate Julian Day Number for 0h UTC (midnight)
+    # The -32045.5 (not -32045) ensures we reference midnight, not noon
+    jd_at_0h =
+      day + floor((153 * m + 2) / 5) + 365 * y + floor(y / 4) -
+        floor(y / 100) + floor(y / 400) - 32045.5
 
-    jd = floor(365.25 * (year + 4716)) + floor(30.6001 * (month + 1)) + day + b - 1524.5
+    # Calculate fraction of day since midnight
+    microseconds = elem(datetime.microsecond, 0)
 
-    # Add fractional day
-    fractional_day = (datetime.hour + datetime.minute / 60.0 + datetime.second / 3600.0) / 24.0
+    fraction_from_midnight =
+      datetime.hour / 24.0 +
+        datetime.minute / 1440.0 +
+        datetime.second / 86400.0 +
+        microseconds / 86_400_000_000.0
 
-    jd + fractional_day
+    # Final Julian Date
+    jd_at_0h + fraction_from_midnight
   end
 
   # Floating point remainder that handles negative numbers correctly

@@ -238,7 +238,7 @@ defmodule Sgp4Ex do
     start_of_year = DateTime.new!(Date.new!(epoch_year, 1, 1), Time.new!(0, 0, 0, 0))
     epoch_with_days = DateTime.add(start_of_year, whole_days, :day)
 
-    microseconds = trunc(fractional_day * @microseconds_per_day)
+    microseconds = round(fractional_day * @microseconds_per_day)
     DateTime.add(epoch_with_days, microseconds, :microsecond)
   end
 
@@ -269,10 +269,12 @@ defmodule Sgp4Ex do
   @spec propagate_tle_to_epoch(TLE.t(), DateTime.t()) ::
           {:ok, TemeState.t()} | {:error, String.t()}
   def propagate_tle_to_epoch(tle, epoch) do
-    tsince = DateTime.diff(epoch, tle.epoch, :millisecond) * 1.0e-3
+    # SGP4 expects time since epoch in MINUTES, not seconds!
+    # Use microsecond precision for accurate time calculation
+    tsince_minutes = DateTime.diff(epoch, tle.epoch, :microsecond) / 60_000_000.0
 
     # Call the NIF function to propagate the TLE
-    case apply(SGP4NIF, :propagate_tle, [tle.line1, tle.line2, tsince]) do
+    case apply(SGP4NIF, :propagate_tle, [tle.line1, tle.line2, tsince_minutes]) do
       {:ok, data} ->
         # NIF returns position in meters and velocity in m/s
         # Convert to km and km/s for consistency
