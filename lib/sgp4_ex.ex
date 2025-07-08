@@ -23,8 +23,11 @@ defmodule Sgp4Ex do
   ## Example
       iex> line1 = "1 25544U 98067A   21275.54791667  .00001264  00000-0  39629-5 0  9993"
       iex> line2 = "2 25544  51.6456  23.4367 0001234  45.6789 314.3210 15.48999999    12"
-      iex> Sgp4Ex.parse_tle(line1, line2)
-      {:ok, %Sgp4Ex.TLE{...}}
+      iex> case Sgp4Ex.parse_tle(line1, line2) do
+      ...>   {:ok, %Sgp4Ex.TLE{}} -> :ok
+      ...>   _ -> :error
+      ...> end
+      :ok
   """
   @spec parse_tle(String.t(), String.t()) :: {:ok, TLE.t()} | {:error, String.t()}
   def parse_tle(line1, line2) do
@@ -128,13 +131,16 @@ defmodule Sgp4Ex do
   - `{:error, String.t()}`: An error message if the propagation fails.
 
   ## Example
-      iex> tle = Sgp4Ex.parse_tle(
-      ...>   line1: "1 25544U 98067A   21275.54791667  .00001264  00000-0  39629-5 0  9993",
-      ...>   line2: "2 25544  51.6456  23.4367 0001234  45.6789 314.3210 15.48999999    12"
+      iex> {:ok, tle} = Sgp4Ex.parse_tle(
+      ...>   "1 25544U 98067A   21275.54791667  .00001264  00000-0  39629-5 0  9993",
+      ...>   "2 25544  51.6456  23.4367 0001234  45.6789 314.3210 15.48999999    12"
       ...> )
       iex> epoch = ~U[2021-10-02T14:00:00Z]
-      iex> Sgp4Ex.propagate_tle_to_epoch(tle, epoch)
-      {:ok, %Sgp4Ex.TemeState{position: {x, y, z}, velocity: {vx, vy, vz}}}
+      iex> case Sgp4Ex.propagate_tle_to_epoch(tle, epoch) do
+      ...>   {:ok, %Sgp4Ex.TemeState{position: {x, y, z}, velocity: {vx, vy, vz}}} when is_float(x) and is_float(y) and is_float(z) and is_float(vx) and is_float(vy) and is_float(vz) -> :ok
+      ...>   _ -> :error
+      ...> end
+      :ok
   """
   @spec propagate_tle_to_epoch(TLE.t(), DateTime.t()) ::
           {:ok, TemeState.t()} | {:error, String.t()}
@@ -142,7 +148,7 @@ defmodule Sgp4Ex do
     tsince = DateTime.diff(epoch, tle.epoch, :millisecond) * 1.0e-3
 
     # Call the NIF function to propagate the TLE
-    case SGP4NIF.propagate_tle(tle.line1, tle.line2, tsince) do
+    case apply(SGP4NIF, :propagate_tle, [tle.line1, tle.line2, tsince]) do
       {:ok, data} ->
         {:ok,
          %TemeState{
