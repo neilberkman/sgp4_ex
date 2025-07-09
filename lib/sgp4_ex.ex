@@ -301,6 +301,8 @@ defmodule Sgp4Ex do
   ## Parameters
   - `tle`: The TLE data structure containing the satellite's orbital elements
   - `epoch`: The UTC datetime to which the TLE should be propagated
+  - `opts`: Options (optional):
+    - `:use_iau2000a` - Boolean, whether to use IAU 2000A nutation model (default: true, matches Skyfield)
 
   ## Returns
   - `{:ok, %{latitude: float, longitude: float, altitude_km: float}}` where:
@@ -321,15 +323,15 @@ defmodule Sgp4Ex do
       ...> end
       :ok
   """
-  @spec propagate_to_geodetic(TLE.t(), DateTime.t()) ::
+  @spec propagate_to_geodetic(TLE.t(), DateTime.t(), keyword()) ::
           {:ok, %{latitude: float(), longitude: float(), altitude_km: float()}}
           | {:error, String.t()}
-  def propagate_to_geodetic(%TLE{} = tle, %DateTime{} = epoch) do
+  def propagate_to_geodetic(%TLE{} = tle, %DateTime{} = epoch, opts \\ []) do
     alias Sgp4Ex.CoordinateSystems
 
     case propagate_tle_to_epoch(tle, epoch) do
       {:ok, %TemeState{position: position}} ->
-        CoordinateSystems.teme_to_geodetic(position, epoch)
+        CoordinateSystems.teme_to_geodetic(position, epoch, opts)
 
       {:error, reason} ->
         {:error, reason}

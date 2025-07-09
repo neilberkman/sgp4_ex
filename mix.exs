@@ -1,3 +1,5 @@
+Code.eval_file("config/exla_macos_fix.exs")
+
 defmodule Sgp4Ex.MixProject do
   use Mix.Project
 
@@ -39,7 +41,11 @@ defmodule Sgp4Ex.MixProject do
 
   # Run "mix help deps" to learn about dependencies.
   defp deps do
-    [{:ex_doc, "~> 0.14", only: :dev, runtime: false}]
+    [
+      {:ex_doc, "~> 0.14", only: :dev, runtime: false},
+      {:nx, "~> 0.9.0"},
+      {:exla, "~> 0.9.0", optional: true}
+    ]
   end
 
   defp package() do

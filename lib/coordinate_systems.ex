@@ -26,6 +26,9 @@ defmodule Sgp4Ex.CoordinateSystems do
   ## Parameters
   - `teme_position` - Position in TEME frame {x, y, z} in km
   - `datetime` - UTC datetime for the position
+  - `opts` - Options (optional):
+    - `:use_iau2000a` - Boolean, whether to use IAU 2000A nutation model (default: true)
+    - `:use_gpu` - Boolean, whether to use GPU-optimized nutation (default: false)
 
   ## Returns
   `{:ok, %{latitude: lat, longitude: lon, altitude_km: alt}}` where:
@@ -33,13 +36,13 @@ defmodule Sgp4Ex.CoordinateSystems do
   - `longitude` - Geodetic longitude in degrees (-180 to 180)
   - `altitude_km` - Height above WGS84 ellipsoid in kilometers
   """
-  @spec teme_to_geodetic({float, float, float}, DateTime.t()) ::
+  @spec teme_to_geodetic({float, float, float}, DateTime.t(), keyword()) ::
           {:ok, %{latitude: float, longitude: float, altitude_km: float}}
-  def teme_to_geodetic({x_teme, y_teme, z_teme}, datetime) do
-    # Step 1: TEME to ECEF
-    {x_ecef, y_ecef, z_ecef} = teme_to_ecef({x_teme, y_teme, z_teme}, datetime)
+  def teme_to_geodetic({x_teme, y_teme, z_teme}, datetime, opts \\ []) do
+    # First convert TEME to ECEF
+    {x_ecef, y_ecef, z_ecef} = teme_to_ecef({x_teme, y_teme, z_teme}, datetime, opts)
 
-    # Step 2: ECEF to Geodetic
+    # Then convert ECEF to Geodetic
     ecef_to_geodetic({x_ecef, y_ecef, z_ecef})
   end
 
@@ -47,19 +50,26 @@ defmodule Sgp4Ex.CoordinateSystems do
   Convert TEME coordinates to ECEF (Earth-Centered Earth-Fixed).
 
   Uses simplified conversion without polar motion corrections.
+  Can optionally use IAU 2000A nutation model for higher precision.
   """
-  @spec teme_to_ecef({float, float, float}, DateTime.t()) :: {float, float, float}
-  def teme_to_ecef({x_teme, y_teme, z_teme}, datetime) do
-    # Calculate Greenwich Mean Sidereal Time
-    gmst_rad = calculate_gmst(datetime)
+  @spec teme_to_ecef({float, float, float}, DateTime.t(), keyword()) :: {float, float, float}
+  def teme_to_ecef({x_teme, y_teme, z_teme}, datetime, opts \\ []) do
+    # Calculate sidereal time based on options
+    # Default to IAU 2000A (GAST) to match Skyfield
+    sidereal_time_rad =
+      if Keyword.get(opts, :use_iau2000a, true) do
+        calculate_gast(datetime, opts)
+      else
+        calculate_gmst(datetime)
+      end
 
-    # Rotation matrix from TEME to ECEF (rotation about Z-axis by GMST)
-    cos_gmst = cos(gmst_rad)
-    sin_gmst = sin(gmst_rad)
+    # Rotation matrix from TEME to ECEF (rotation about Z-axis)
+    cos_st = cos(sidereal_time_rad)
+    sin_st = sin(sidereal_time_rad)
 
-    # Apply rotation by GMST
-    x_ecef = cos_gmst * x_teme + sin_gmst * y_teme
-    y_ecef = -sin_gmst * x_teme + cos_gmst * y_teme
+    # Apply rotation
+    x_ecef = cos_st * x_teme + sin_st * y_teme
+    y_ecef = -sin_st * x_teme + cos_st * y_teme
     z_ecef = z_teme
 
     {x_ecef, y_ecef, z_ecef}
@@ -125,6 +135,27 @@ defmodule Sgp4Ex.CoordinateSystems do
      }}
   end
 
+  # Calculate Greenwich Apparent Sidereal Time (GAST) in radians
+  # Uses IAU 2000A nutation model for high precision
+  defp calculate_gast(datetime, opts \\ []) do
+    # Convert to Julian Dates
+    jd_ut1 = datetime_to_julian_date(datetime)
+    # For simplicity, assume UT1 = UTC and TT = UTC + 69.184s
+    jd_tt = jd_ut1 + 69.184 / 86400.0
+
+    # Get GAST in hours from IAU 2000A module
+    gast_hours = 
+      if Keyword.get(opts, :use_gpu, false) do
+        Sgp4Ex.IAU2000ANutation.gast_gpu(jd_ut1, jd_tt)
+      else
+        Sgp4Ex.IAU2000ANutation.gast(jd_ut1, jd_tt)
+      end
+
+    # Convert to radians
+    gast_rad = gast_hours * 15.0 * pi() / 180.0
+    rem_float(gast_rad, 2.0 * pi())
+  end
+
   # Calculate Greenwich Mean Sidereal Time (GMST) in radians
   # Simplified version using linear approximation
   defp calculate_gmst(datetime) do
@@ -152,7 +183,8 @@ defmodule Sgp4Ex.CoordinateSystems do
   end
 
   # Convert DateTime to Julian Date (Meeus algorithm, referenced to 0h UTC)
-  defp datetime_to_julian_date(datetime) do
+  @doc false
+  def datetime_to_julian_date(datetime) do
     year = datetime.year
     month = datetime.month
     day = datetime.day
