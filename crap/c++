@@ -1,0 +1,3 @@
+#!/bin/bash
+# Wrapper for c++ compiler to add missing template arg list flag
+exec /usr/bin/c++ "$@" -Wno-error=missing-template-arg-list-after-template-kw

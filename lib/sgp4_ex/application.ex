@@ -7,9 +7,20 @@ defmodule Sgp4Ex.Application do
 
   @impl true
   def start(_type, _args) do
+    import Cachex.Spec
+
     children = [
-      # Starts a worker by calling: Sgp4Ex.Worker.start_link(arg)
-      # {Sgp4Ex.Worker, arg}
+      # Cachex-based satellite cache for improved performance  
+      {Cachex,
+       [
+         :sgp4_satellite_cache,
+         [
+           limit: 1000,
+           hooks: [
+             hook(module: Cachex.Stats)
+           ]
+         ]
+       ]}
     ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html

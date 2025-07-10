@@ -28,3 +28,4 @@ sgp4_ex-*.tar
 # NIF build artifacts
 /priv/
 /build/
+/.exla_cxx_wrapper.sh

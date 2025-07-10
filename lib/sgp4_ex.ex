@@ -301,6 +301,8 @@ defmodule Sgp4Ex do
   ## Parameters
   - `tle`: The TLE data structure containing the satellite's orbital elements
   - `epoch`: The UTC datetime to which the TLE should be propagated
+  - `opts`: Options (optional):
+    - `:use_iau2000a` - Boolean, whether to use IAU 2000A nutation model (default: false for performance, use true for highest precision)
 
   ## Returns
   - `{:ok, %{latitude: float, longitude: float, altitude_km: float}}` where:
@@ -321,18 +323,92 @@ defmodule Sgp4Ex do
       ...> end
       :ok
   """
-  @spec propagate_to_geodetic(TLE.t(), DateTime.t()) ::
+  @spec propagate_to_geodetic(TLE.t(), DateTime.t(), keyword()) ::
           {:ok, %{latitude: float(), longitude: float(), altitude_km: float()}}
           | {:error, String.t()}
-  def propagate_to_geodetic(%TLE{} = tle, %DateTime{} = epoch) do
+  def propagate_to_geodetic(%TLE{} = tle, %DateTime{} = epoch, opts \\ []) do
     alias Sgp4Ex.CoordinateSystems
 
     case propagate_tle_to_epoch(tle, epoch) do
       {:ok, %TemeState{position: position}} ->
-        CoordinateSystems.teme_to_geodetic(position, epoch)
+        CoordinateSystems.teme_to_geodetic(position, epoch, opts)
 
       {:error, reason} ->
         {:error, reason}
+    end
+  end
+
+  @doc """
+  Propagate a satellite to multiple epochs efficiently.
+
+  This function automatically uses the stateful satellite API when propagating
+  to multiple epochs, matching Python SGP4's pattern of initializing once and
+  propagating many times.
+
+  ## Parameters
+  - `line1`: First line of the TLE
+  - `line2`: Second line of the TLE  
+  - `epochs`: List of DateTime objects to propagate to
+  - `opts`: Options (optional):
+    - `:use_iau2000a` - Boolean, whether to use IAU 2000A nutation model (default: true)
+
+  ## Returns
+  List of results in the same order as input epochs, where each result is:
+  - `{:ok, %{latitude: float, longitude: float, altitude_km: float}}`
+  - `{:error, String.t()}` if that specific propagation failed
+
+  ## Example
+      iex> line1 = "1 25544U 98067A   21275.54791667  .00001264  00000-0  39629-5 0  9993"
+      iex> line2 = "2 25544  51.6456  23.4367 0001234  45.6789 314.3210 15.48999999    12"
+      iex> epochs = [~U[2021-10-02T14:00:00Z], ~U[2021-10-02T14:01:00Z]]
+      iex> results = Sgp4Ex.propagate_many_to_geodetic(line1, line2, epochs)
+      iex> length(results) == 2
+      true
+  """
+  @spec propagate_many_to_geodetic(String.t(), String.t(), [DateTime.t()], keyword()) ::
+          [
+            {:ok, %{latitude: float(), longitude: float(), altitude_km: float()}}
+            | {:error, String.t()}
+          ]
+  def propagate_many_to_geodetic(line1, line2, epochs, opts \\ []) when is_list(epochs) do
+    alias Sgp4Ex.Propagator
+    Propagator.propagate_many_to_geodetic(line1, line2, epochs, opts)
+  end
+
+  @doc """
+  Propagate a satellite to multiple epochs efficiently, returning TEME states.
+
+  This function uses the stateful satellite API for optimal performance.
+
+  ## Parameters
+  - `line1`: First line of the TLE
+  - `line2`: Second line of the TLE  
+  - `epochs`: List of DateTime values to propagate to
+
+  ## Returns
+  - `{:ok, [TemeState.t()]}` - List of propagated states
+  - `{:error, reason}` on failure
+
+  ## Example
+      iex> line1 = "1 25544U 98067A   24001.00000000  .00001000  00000-0  10000-4 0  9990"
+      iex> line2 = "2 25544  51.6400 339.7760 0003000  83.6100 276.6000 15.49000000000010"
+      iex> epochs = [~U[2024-01-01 00:00:00Z], ~U[2024-01-01 01:00:00Z]]
+      iex> {:ok, _states} = Sgp4Ex.propagate_many(line1, line2, epochs)
+  """
+  @spec propagate_many(String.t(), String.t(), [DateTime.t()]) ::
+          {:ok, [TemeState.t()]} | {:error, String.t()}
+  def propagate_many(line1, line2, epochs) when is_list(epochs) do
+    case parse_tle(line1, line2) do
+      {:ok, tle} ->
+        results =
+          Enum.map(epochs, fn epoch ->
+            propagate_to_geodetic(tle, epoch)
+          end)
+
+        {:ok, Enum.map(results, fn {:ok, state} -> state end)}
+
+      error ->
+        error
     end
   end
 end
