@@ -168,7 +168,7 @@ defmodule Sgp4Ex.SatelliteArray do
           {:ok, {{x_m, y_m, z_m}, {_vx_m, _vy_m, _vz_m}}} when to_geodetic ->
             # Convert TEME to geodetic
             teme_pos_km = {x_m / 1000.0, y_m / 1000.0, z_m / 1000.0}
-            Sgp4Ex.CoordinateSystems.teme_to_geodetic(teme_pos_km, datetime)
+            Sgp4Ex.CoordinateSystems.teme_to_geodetic(teme_pos_km, datetime, use_gpu: true)
 
           {:ok, {{x_m, y_m, z_m}, {vx_m, vy_m, vz_m}}} ->
             # Return TEME state directly
@@ -229,7 +229,7 @@ defmodule Sgp4Ex.SatelliteArray do
         case Sgp4Ex.Satellite.propagate(sat_ref, datetime) do
           {:ok, teme_state} when to_geodetic ->
             # Convert TEME to geodetic
-            Sgp4Ex.CoordinateSystems.teme_to_geodetic(teme_state.position, datetime)
+            Sgp4Ex.CoordinateSystems.teme_to_geodetic(teme_state.position, datetime, use_gpu: true)
 
           {:ok, teme_state} ->
             # Return TEME state directly
