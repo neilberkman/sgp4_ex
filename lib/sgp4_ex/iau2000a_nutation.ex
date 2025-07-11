@@ -196,9 +196,9 @@ defmodule Sgp4Ex.IAU2000ANutation do
     # Calculate all nutation terms
     {dpsi_tensor, deps_tensor} = calculate_all_nutation(fund_args, t)
 
-    # Convert from microarcseconds to radians
-    dpsi_rad = dpsi_tensor * 1.0e-6 * @asec2rad
-    deps_rad = deps_tensor * 1.0e-6 * @asec2rad
+    # Convert from 0.1 microarcseconds to radians
+    dpsi_rad = dpsi_tensor * 1.0e-7 * @asec2rad
+    deps_rad = deps_tensor * 1.0e-7 * @asec2rad
 
     {dpsi_rad, deps_rad}
   end
