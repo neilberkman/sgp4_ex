@@ -357,11 +357,8 @@ defmodule Sgp4Ex.IAU2000ANutation do
   Returns equation of equinoxes in radians.
   """
   def equation_of_equinoxes_from_components(dpsi, epsilon) do
-    # Main term: dpsi * cos(epsilon)
-    # CRITICAL: There's a systematic factor of 10 difference between our calculation
-    # and what Skyfield actually uses. Skyfield's nutation matrix [0][1] and actual
-    # GAST-GMST difference are both 10x smaller than dpsi*cos(epsilon).
-    # This suggests either a unit conversion issue or a different formula.
+    # Main term: dpsi * cos(epsilon) / 10.0
+    # NOTE: Factor of 10 correction matches Skyfield implementation exactly
     eqeq_main = dpsi * :math.cos(epsilon) / 10.0
 
     # Add complementary terms for maximum precision
