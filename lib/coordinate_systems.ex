@@ -29,7 +29,6 @@ defmodule Sgp4Ex.CoordinateSystems do
   - `datetime` - UTC datetime for the position
   - `opts` - Options (optional):
     - `:use_iau2000a` - Boolean, whether to use IAU 2000A nutation model (default: true for accuracy, false for speed)
-    - `:use_gpu` - Boolean, whether to use GPU-optimized nutation (default: false)
 
   ## Returns
   `{:ok, %{latitude: lat, longitude: lon, altitude_km: alt}}` where:
@@ -48,7 +47,7 @@ defmodule Sgp4Ex.CoordinateSystems do
   end
 
   @doc """
-  GPU-optimized batch conversion from TEME to ECEF using tensor operations.
+  Tensor-optimized batch conversion from TEME to ECEF using Nx operations.
 
   ## Parameters
   - `teme_positions` - Nx tensor of shape {n, 3} with TEME positions in km
@@ -58,21 +57,21 @@ defmodule Sgp4Ex.CoordinateSystems do
   ## Returns
   Nx tensor of shape {n, 3} with ECEF positions in km
   """
-  def teme_to_ecef_gpu_batch(teme_positions, jd_ut1, jd_tt) do
-    # Get GAST as a tensor
+  def teme_to_ecef_tensor_batch(teme_positions, jd_ut1, jd_tt) do
+    # Get GAST as a tensor using unified module
     gast_hours_tensor =
-      Sgp4Ex.IAU2000ANutationGPU.gast_gpu_tensor(
+      Sgp4Ex.IAU2000ANutation.gast_tensor(
         Nx.tensor(jd_ut1, type: :f64),
         Nx.tensor(jd_tt, type: :f64),
         Nx.tensor(0.0, type: :f64),
         Nx.tensor(0.0, type: :f64)
       )
 
-    # Convert to radians
-    gast_rad_tensor = Sgp4Ex.IAU2000ANutationGPU.gast_to_radians_gpu(gast_hours_tensor)
+    # Convert to radians: hours * 15° * π/180° = hours * π/12
+    gast_rad_tensor = gast_hours_tensor * Nx.Constants.pi() / 12.0
 
-    # Apply rotation in GPU
-    Sgp4Ex.IAU2000ANutationGPU.rotate_teme_to_ecef_gpu(teme_positions, gast_rad_tensor)
+    # Apply rotation using tensor operations
+    rotate_teme_to_ecef_tensor(teme_positions, gast_rad_tensor)
   end
 
   @doc """
@@ -166,23 +165,15 @@ defmodule Sgp4Ex.CoordinateSystems do
 
   # Calculate Greenwich Apparent Sidereal Time (GAST) in radians
   # Uses IAU 2000A nutation model for high precision
-  defp calculate_gast(datetime, opts) do
+  defp calculate_gast(datetime, _opts) do
     # Convert to Julian Dates
     jd_ut1 = datetime_to_julian_date(datetime)
     # Use more precise TT-UT1 offset (matches Skyfield for 2024-03-15)
     # This is Delta T, which varies slowly over time  
     jd_tt = jd_ut1 + 69.19318735599518 / 86400.0
 
-    # Use GPU-optimized GAST calculation when available
-    use_gpu = Keyword.get(opts, :use_gpu, true)
-    
-    gast_hours = if use_gpu do
-      # Use GPU-optimized version that stays in tensor space
-      Sgp4Ex.IAU2000ANutationGPU.gast_gpu(jd_ut1, jd_tt)
-    else
-      # Fallback to CPU version
-      Sgp4Ex.IAU2000ANutation.gast(jd_ut1, jd_tt)
-    end
+    # Use unified nutation module - Nx automatically chooses CPU/GPU backend
+    gast_hours = Sgp4Ex.IAU2000ANutation.gast(jd_ut1, jd_tt)
 
     # Convert to radians
     gast_rad = gast_hours * 15.0 * pi() / 180.0
@@ -253,9 +244,9 @@ defmodule Sgp4Ex.CoordinateSystems do
   end
 
   @doc """
-  GPU-optimized batch conversion of TEME positions to geodetic coordinates.
+  Tensor-optimized batch conversion of TEME positions to geodetic coordinates.
 
-  Processes multiple positions at once, keeping all calculations in GPU memory.
+  Processes multiple positions at once using Nx tensor operations.
   This is much more efficient than converting positions one at a time.
 
   ## Parameters
@@ -265,12 +256,12 @@ defmodule Sgp4Ex.CoordinateSystems do
   ## Returns
   List of `{:ok, %{latitude: lat, longitude: lon, altitude_km: alt}}` tuples
   """
-  def teme_to_geodetic_batch_gpu(teme_positions, datetime) when is_list(teme_positions) do
+  def teme_to_geodetic_batch_tensor(teme_positions, datetime) when is_list(teme_positions) do
     # Convert to Julian Dates once for all positions
     jd_ut1 = datetime_to_julian_date(datetime)
     jd_tt = jd_ut1 + 69.184 / 86400.0
 
-    # Get GAST using full GPU pipeline
+    # Get GAST using unified tensor pipeline
     jd_ut1_tensor = Nx.tensor(jd_ut1, type: :f64)
     jd_tt_tensor = Nx.tensor(jd_tt, type: :f64)
     fraction_ut1 = Nx.tensor(0.0, type: :f64)
@@ -278,14 +269,15 @@ defmodule Sgp4Ex.CoordinateSystems do
 
     # Calculate GAST in tensor form and convert to radians
     gast_hours_tensor =
-      Sgp4Ex.IAU2000ANutationGPU.gast_gpu_tensor(
+      Sgp4Ex.IAU2000ANutation.gast_tensor(
         jd_ut1_tensor,
         jd_tt_tensor,
         fraction_ut1,
         fraction_tt
       )
 
-    gast_rad_tensor = Sgp4Ex.IAU2000ANutationGPU.gast_to_radians_gpu(gast_hours_tensor)
+    # Convert to radians
+    gast_rad_tensor = gast_hours_tensor * Nx.Constants.pi() / 12.0
 
     # Extract scalar value for rotation matrix
     gast_rad = Nx.to_number(gast_rad_tensor)
@@ -305,15 +297,15 @@ defmodule Sgp4Ex.CoordinateSystems do
   end
 
   @doc """
-  Full GPU pipeline for TEME to ECEF batch conversion.
-  Returns ECEF positions as Nx tensor for further GPU processing.
+  Full tensor pipeline for TEME to ECEF batch conversion.
+  Returns ECEF positions as Nx tensor for further processing.
   """
-  def teme_to_ecef_batch_gpu_tensor(teme_positions_tensor, datetime) do
+  def teme_to_ecef_batch_tensor_full(teme_positions_tensor, datetime) do
     # Convert to Julian Dates
     jd_ut1 = datetime_to_julian_date(datetime)
     jd_tt = jd_ut1 + 69.184 / 86400.0
 
-    # Get GAST using full GPU pipeline
+    # Get GAST using unified tensor pipeline
     jd_ut1_tensor = Nx.tensor(jd_ut1, type: :f64)
     jd_tt_tensor = Nx.tensor(jd_tt, type: :f64)
     fraction_ut1 = Nx.tensor(0.0, type: :f64)
@@ -321,21 +313,21 @@ defmodule Sgp4Ex.CoordinateSystems do
 
     # Calculate GAST and convert to radians
     gast_hours_tensor =
-      Sgp4Ex.IAU2000ANutationGPU.gast_gpu_tensor(
+      Sgp4Ex.IAU2000ANutation.gast_tensor(
         jd_ut1_tensor,
         jd_tt_tensor,
         fraction_ut1,
         fraction_tt
       )
 
-    gast_rad_tensor = Sgp4Ex.IAU2000ANutationGPU.gast_to_radians_gpu(gast_hours_tensor)
+    gast_rad_tensor = gast_hours_tensor * Nx.Constants.pi() / 12.0
 
-    # Perform batch rotation in GPU
-    rotate_teme_to_ecef_gpu(teme_positions_tensor, gast_rad_tensor)
+    # Perform batch rotation using tensors
+    rotate_teme_to_ecef_tensor(teme_positions_tensor, gast_rad_tensor)
   end
 
-  # GPU kernel for batch TEME to ECEF rotation
-  defnp rotate_teme_to_ecef_gpu(teme_positions, gast_rad) do
+  # Tensor kernel for batch TEME to ECEF rotation
+  defnp rotate_teme_to_ecef_tensor(teme_positions, gast_rad) do
     cos_st = Nx.cos(gast_rad)
     sin_st = Nx.sin(gast_rad)
 

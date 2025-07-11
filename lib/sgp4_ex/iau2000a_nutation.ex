@@ -1,317 +1,315 @@
 defmodule Sgp4Ex.IAU2000ANutation do
   @moduledoc """
-  IAU 2000A nutation model implementation for high-precision coordinate transformations.
-
-  This module implements the complete International Astronomical Union's 2000A nutation model,
-  which accounts for the periodic oscillations of Earth's rotation axis. The implementation
-  achieves near-perfect compatibility with the Skyfield Python library.
-
-  ## Technical Details
-
-  The IAU 2000A model consists of:
-  - 1365 lunisolar terms for nutation in longitude and obliquity
-  - 66 planetary terms for additional precision
-  - Fundamental arguments based on lunar and planetary positions
-
-  ## Implementation Accuracy
-
-  This implementation painstakingly reproduces EVERY calculation step from Skyfield:
-  - All 1365 lunisolar nutation terms (exact match)
-  - All 66 planetary nutation terms (exact match)
-  - Fundamental arguments (exact match to 1e-15 radians)
-  - Mean obliquity calculation (exact match)
-  - Equation of equinoxes (exact match)
-  - GMST and GAST calculations (exact match to 1e-10 hours)
-
-  The only difference is at the machine precision level: Skyfield uses NumPy with 
-  BLAS-optimized matrix operations, while Elixir performs sequential floating-point 
-  summation. This results in a microscopic difference of 2×10⁻¹⁰ microarcseconds,
-  which propagates to a final ~400 meter difference in geodetic coordinates.
-
-  ## Usage
-
-  This module is used internally by `Sgp4Ex.CoordinateSystems` for TEME to geodetic
-  conversions when the `use_iau2000a: true` option is specified (now the default).
+  IAU 2000A nutation model implementation using Nx tensors.
+  
+  Automatically uses CPU or GPU backend based on what Nx detects.
+  Uses tensor operations for maximum performance on available hardware.
   """
 
   import Nx.Defn
 
-  # Use exact value from Skyfield to ensure precision
-  @asec2rad 4.84813681109535984270e-06
-  @asec360 1_296_000.0
+  # Constants
   @j2000 2_451_545.0
+  @asec2rad 4.848136811095359935899141e-6
+  @asec360 1_296_000.0
 
-  # Load coefficients at compile time - same as original
-  @fa0 Sgp4Ex.IAU2000ACoefficients.fa0() |> Nx.squeeze() |> Nx.to_list()
-  @fa1 Sgp4Ex.IAU2000ACoefficients.fa1() |> Nx.squeeze() |> Nx.to_list()
-  @fa2 Sgp4Ex.IAU2000ACoefficients.fa2() |> Nx.squeeze() |> Nx.to_list()
-  @fa3 Sgp4Ex.IAU2000ACoefficients.fa3() |> Nx.squeeze() |> Nx.to_list()
-  @fa4 Sgp4Ex.IAU2000ACoefficients.fa4() |> Nx.squeeze() |> Nx.to_list()
+  # Import coefficient data
+  alias Sgp4Ex.IAU2000ACoefficients
 
-  # Same coefficient loading as original
-  @lunisolar_arg_mult Sgp4Ex.IAU2000ACoefficients.lunisolar_arg_multipliers() |> Nx.to_list()
-  @lunisolar_lon_coeffs Sgp4Ex.IAU2000ACoefficients.lunisolar_longitude_coefficients()
-                        |> Nx.to_list()
-  @lunisolar_obl_coeffs Sgp4Ex.IAU2000ACoefficients.lunisolar_obliquity_coefficients()
-                        |> Nx.to_list()
+  # Pre-computed tensors for tensor operations
+  @lunisolar_arg_mult_tensor Nx.tensor(IAU2000ACoefficients.lunisolar_arg_multipliers())
+                             |> Nx.as_type(:s32)
+  @lunisolar_lon_coeffs_tensor Nx.tensor(IAU2000ACoefficients.lunisolar_longitude_coefficients())
+                               |> Nx.as_type(:f64)
+  @lunisolar_obl_coeffs_tensor Nx.tensor(IAU2000ACoefficients.lunisolar_obliquity_coefficients())
+                               |> Nx.as_type(:f64)
+  @planetary_arg_mult_tensor Nx.tensor(IAU2000ACoefficients.planetary_arg_multipliers())
+                             |> Nx.as_type(:s32)
+  @planetary_lon_coeffs_tensor Nx.tensor(IAU2000ACoefficients.planetary_longitude_coefficients())
+                               |> Nx.as_type(:f64)
+  @planetary_obl_coeffs_tensor Nx.tensor(IAU2000ACoefficients.planetary_obliquity_coefficients())
+                               |> Nx.as_type(:f64)
+  @index_13_tensor Nx.tensor([[13]])
 
-  @planetary_arg_mult Sgp4Ex.IAU2000ACoefficients.planetary_arg_multipliers() |> Nx.to_list()
-  @planetary_lon_coeffs Sgp4Ex.IAU2000ACoefficients.planetary_longitude_coefficients()
-                        |> Nx.to_list()
-  @planetary_obl_coeffs Sgp4Ex.IAU2000ACoefficients.planetary_obliquity_coefficients()
-                        |> Nx.to_list()
+  # Fundamental arguments coefficients
+  @fa0 Nx.tensor(
+         [
+           3.154384999847899,
+           2.357551718265301,
+           1.6280158027288272,
+           5.198471222772339,
+           2.182438624381695,
+           0.0,
+           4.402675378302461,
+           3.176124779336447,
+           1.7534699593468917,
+           6.203476112911137,
+           5.4812548919868355,
+           0.59953550516771,
+           0.8740267519538868,
+           5.371135665268745
+         ],
+         type: :f64
+       )
 
-  # Same anomaly coefficients as original
-  @anomaly_constant [
-    2.3555559800000001,
-    6.2400601299999998,
-    1.627905234,
-    5.1984667409999998,
-    2.1824392000000001,
-    4.4026088420000002,
-    3.1761466970000001,
-    1.7534703140000001,
-    6.2034809129999999,
-    0.59954649699999996,
-    0.87401675700000003,
-    5.4812938710000001,
-    5.3211589999999998,
-    0.024381750000000001
-  ]
+  @fa1 Nx.tensor(
+         [
+           628_307_584_999.0,
+           8_399_684.6073,
+           8_433_463.1576,
+           7_771_374.8964,
+           -33.86238,
+           0.0,
+           5217.912,
+           1_021_227.9348,
+           628_307.5843,
+           668_621.7299,
+           20.082,
+           529_690.8128,
+           424_347.2442,
+           0.5269
+         ],
+         type: :f64
+       )
 
-  @anomaly_coefficient [
-    8328.6914269553999,
-    628.30195500000002,
-    8433.4661581309992,
-    7771.3771468121004,
-    -33.757044999999998,
-    2608.7903141574002,
-    1021.3285546211,
-    628.30758499909996,
-    334.06124267000001,
-    52.969096264100003,
-    21.329910496,
-    7.4781598566999996,
-    3.8127773999999999,
-    5.3869099999999999e-06
-  ]
+  @fa2 Nx.tensor(
+         [
+           0.0,
+           -2.1973e-05,
+           -1.1836e-05,
+           -6.8416e-06,
+           -1.5486e-08,
+           0.0,
+           0.0,
+           -3.7081e-08,
+           -1.1826e-07,
+           0.0,
+           0.0,
+           -8.5463e-06,
+           9.9238e-06,
+           -2.228e-13
+         ],
+         type: :f64
+       )
+
+  @fa3 Nx.tensor(
+         [
+           0.0,
+           5.4e-15,
+           0.0,
+           0.0,
+           0.0,
+           0.0,
+           0.0,
+           0.0,
+           0.0,
+           0.0,
+           0.0,
+           0.0,
+           0.0,
+           0.0
+         ],
+         type: :f64
+       )
+
+  @fa4 Nx.tensor(
+         [
+           0.0,
+           -4.5e-20,
+           0.0,
+           0.0,
+           0.0,
+           0.0,
+           0.0,
+           0.0,
+           0.0,
+           0.0,
+           0.0,
+           0.0,
+           0.0,
+           0.0
+         ],
+         type: :f64
+       )
+
+  @anomaly_constant Nx.tensor(
+                      [
+                        2.3555559800000001,
+                        6.2400601299999998,
+                        1.627905234,
+                        5.1984667409999998,
+                        2.1824392000000001,
+                        4.4026088420000002,
+                        3.1761466970000001,
+                        1.7534703140000001,
+                        6.2034809129999999,
+                        0.59954649699999996,
+                        0.87401675700000003,
+                        5.4812938710000001,
+                        5.3211589999999998,
+                        0.024381750000000001
+                      ],
+                      type: :f64
+                    )
+
+  @anomaly_coefficient Nx.tensor(
+                         [
+                           8328.6914269553999,
+                           628.30195500000002,
+                           8433.4661581309992,
+                           7771.3771468121004,
+                           -33.757044999999998,
+                           2608.7903141574002,
+                           1021.3285546211,
+                           628.30758499909996,
+                           334.06124267000001,
+                           52.969096264100003,
+                           21.329910496,
+                           7.4781598566999996,
+                           3.8127773999999999,
+                           5.3869099999999999e-06
+                         ],
+                         type: :f64
+                       )
 
   @doc """
   Calculate IAU 2000A nutation in longitude and obliquity.
-
-  This is the core function that computes Earth's nutation using the full IAU 2000A model
-  with 1365 lunisolar and 66 planetary terms.
-
-  ## Parameters
-  - `jd_tt` - Julian Date in Terrestrial Time
-
-  ## Returns
-  A tuple `{dpsi, deps}` where:
-  - `dpsi` - Nutation in longitude (radians)
-  - `deps` - Nutation in obliquity (radians)
+  Returns {dpsi, deps} in radians.
+  Automatically uses CPU or GPU backend based on Nx configuration.
   """
-  def iau2000a_nutation(jd_tt) do
+  def iau2000a_nutation(jd_tt) when is_float(jd_tt) do
+    jd_tt_tensor = Nx.tensor(jd_tt, type: :f64)
+    {dpsi_tensor, deps_tensor} = iau2000a_nutation_tensor(jd_tt_tensor)
+    {Nx.to_number(dpsi_tensor), Nx.to_number(deps_tensor)}
+  end
+
+  @doc """
+  Tensor version for chaining operations.
+  """
+  defn iau2000a_nutation_tensor(jd_tt) do
     # Convert to centuries since J2000
     t = (jd_tt - @j2000) / 36525.0
 
-    # Calculate fundamental arguments - same as original
-    fund_args = fundamental_arguments(Nx.tensor(t, type: :f64))
+    # Calculate fundamental arguments
+    fund_args = fundamental_arguments(t)
 
-    # Calculate lunisolar contribution
-    {dpsi_ls, deps_ls} = calculate_lunisolar_nutation(fund_args, t)
-
-    # Calculate planetary contribution
-    {dpsi_pl, deps_pl} = calculate_planetary_nutation(t)
-
-    # Sum contributions
-    dpsi = dpsi_ls + dpsi_pl
-    deps = deps_ls + deps_pl
+    # Calculate all nutation terms
+    {dpsi_tensor, deps_tensor} = calculate_all_nutation(fund_args, t)
 
     # Convert from microarcseconds to radians
-    dpsi_rad = dpsi * 1.0e-6 * @asec2rad
-    deps_rad = deps * 1.0e-6 * @asec2rad
+    dpsi_rad = dpsi_tensor * 1.0e-6 * @asec2rad
+    deps_rad = deps_tensor * 1.0e-6 * @asec2rad
 
     {dpsi_rad, deps_rad}
   end
 
-  # Same fundamental arguments as original
-  defn fundamental_arguments_arcsec(t) do
-    t = Nx.as_type(t, :f64)
+  defnp fundamental_arguments(t) do
+    # Calculate all arguments at once using tensor operations
+    args = @fa4 * t
+    args = (args + @fa3) * t
+    args = (args + @fa2) * t
+    args = (args + @fa1) * t
+    args = args + @fa0
 
-    fa0 = Nx.tensor(@fa0, type: :f64)
-    fa1 = Nx.tensor(@fa1, type: :f64)
-    fa2 = Nx.tensor(@fa2, type: :f64)
-    fa3 = Nx.tensor(@fa3, type: :f64)
-    fa4 = Nx.tensor(@fa4, type: :f64)
-
-    args = fa4 * t
-    args = (args + fa3) * t
-    args = (args + fa2) * t
-    args = (args + fa1) * t
-    args = args + fa0
-
-    # Use Python fmod equivalent for angle wrapping
-    # Python's fmod can return negative values, unlike Nx.remainder
-    # For angles > 180°, wrap to negative range to match Skyfield exactly
-    wrapped = Nx.remainder(args, @asec360)
-    half_circle = @asec360 / 2.0
-    Nx.select(wrapped > half_circle, wrapped - @asec360, wrapped)
+    # Convert to radians
+    Nx.remainder(args, @asec360) * @asec2rad
   end
 
-  def fundamental_arguments(t) do
-    args_arcsec = fundamental_arguments_arcsec(t)
-    args_list = Nx.to_list(args_arcsec)
+  defnp calculate_all_nutation(fund_args, t) do
+    # Use pre-computed coefficient tensors
+    arg_mult = @lunisolar_arg_mult_tensor
+    lon_coeffs = @lunisolar_lon_coeffs_tensor
+    obl_coeffs = @lunisolar_obl_coeffs_tensor
 
-    args_rad = Enum.map(args_list, fn arg -> arg * @asec2rad end)
-    Nx.tensor(args_rad, type: :f64)
+    # Lunisolar calculations only need first 5 fundamental arguments
+    fund_args_5 = fund_args[0..4]
+
+    # Calculate all arguments at once
+    args = Nx.dot(arg_mult, fund_args_5)
+
+    # Sin and cos for all arguments
+    sin_args = Nx.sin(args)
+    cos_args = Nx.cos(args)
+
+    # Lunisolar contributions - fully vectorized
+    dpsi_ls = calculate_dpsi(sin_args, cos_args, lon_coeffs, t)
+    deps_ls = calculate_deps(sin_args, cos_args, obl_coeffs, t)
+
+    # Planetary contributions
+    {dpsi_pl, deps_pl} = calculate_planetary(t)
+
+    # Return total nutation as tensors
+    {dpsi_ls + dpsi_pl, deps_ls + deps_pl}
   end
 
-  # Calculate a single nutation term
-  # This MUST match Skyfield exactly
-  def calculate_single_term(fundamental_args, arg_multipliers, t, lon_coeffs, obl_coeffs) do
-    # Calculate the argument
-    arg = Nx.dot(arg_multipliers, fundamental_args) |> Nx.to_number()
-
-    # Sin and cos
-    sin_arg = :math.sin(arg)
-    cos_arg = :math.cos(arg)
-
-    # Longitude contribution
+  defnp calculate_dpsi(sin_args, cos_args, lon_coeffs, t) do
     # dpsi = sin * coeff[0] + sin * coeff[1] * t + cos * coeff[2]
-    lon_0 = Nx.to_number(lon_coeffs[0])
-    lon_1 = Nx.to_number(lon_coeffs[1])
-    lon_2 = Nx.to_number(lon_coeffs[2])
+    term1 = Nx.dot(sin_args, lon_coeffs[[.., 0]])
+    term2 = Nx.dot(sin_args, lon_coeffs[[.., 1]]) * t
+    term3 = Nx.dot(cos_args, lon_coeffs[[.., 2]])
+    term1 + term2 + term3
+  end
 
-    dpsi_contrib = sin_arg * lon_0 + sin_arg * lon_1 * t + cos_arg * lon_2
-
-    # Obliquity contribution
+  defnp calculate_deps(sin_args, cos_args, obl_coeffs, t) do
     # deps = cos * coeff[0] + cos * coeff[1] * t + sin * coeff[2]
-    obl_0 = Nx.to_number(obl_coeffs[0])
-    obl_1 = Nx.to_number(obl_coeffs[1])
-    obl_2 = Nx.to_number(obl_coeffs[2])
-
-    deps_contrib = cos_arg * obl_0 + cos_arg * obl_1 * t + sin_arg * obl_2
-
-    {dpsi_contrib, deps_contrib}
+    term1 = Nx.dot(cos_args, obl_coeffs[[.., 0]])
+    term2 = Nx.dot(cos_args, obl_coeffs[[.., 1]]) * t
+    term3 = Nx.dot(sin_args, obl_coeffs[[.., 2]])
+    term1 + term2 + term3
   end
 
-  defp calculate_lunisolar_nutation(fund_args, t) do
-    # Fast path: avoid tensor overhead for single calculations
-    # Convert fund_args tensor to list once
-    fund_args_list = Nx.to_list(fund_args)
-    
-    # Use optimized sequential calculation matching Skyfield
-    {dpsi_sum, deps_sum} = calculate_lunisolar_terms_fast(fund_args_list, t)
-    
-    {dpsi_sum, deps_sum}
-  end
-
-  # HYPER-OPTIMIZED sequential calculation - BEAT PYTHON! 🔥
-  defp calculate_lunisolar_terms_fast(fund_args_list, t) do
-    calculate_lunisolar_loop(@lunisolar_arg_mult, @lunisolar_lon_coeffs, @lunisolar_obl_coeffs, fund_args_list, t, 0.0, 0.0)
-  end
-
-  # Tail-recursive loop for maximum speed
-  defp calculate_lunisolar_loop([], [], [], _fund_args, _t, dpsi_acc, deps_acc), do: {dpsi_acc, deps_acc}
-  
-  defp calculate_lunisolar_loop([arg_mult | rest_mult], [lon_coeffs | rest_lon], [obl_coeffs | rest_obl], fund_args, t, dpsi_acc, deps_acc) do
-    # Fast argument calculation with direct list operations
-    arg = calculate_arg_fast(arg_mult, fund_args, 0.0)
-    
-    # Calculate sin/cos once
-    sin_arg = :math.sin(arg)
-    cos_arg = :math.cos(arg)
-    
-    # Direct list access for coefficients (no Enum.at!)
-    [lon_c0, lon_c1, lon_c2] = lon_coeffs
-    [obl_c0, obl_c1, obl_c2] = obl_coeffs
-    
-    # Longitude contribution: sin*c0 + sin*c1*t + cos*c2
-    dpsi_contrib = sin_arg * lon_c0 + sin_arg * lon_c1 * t + cos_arg * lon_c2
-    
-    # Obliquity contribution: cos*c0 + cos*c1*t + sin*c2  
-    deps_contrib = cos_arg * obl_c0 + cos_arg * obl_c1 * t + sin_arg * obl_c2
-    
-    # Tail recursive call
-    calculate_lunisolar_loop(rest_mult, rest_lon, rest_obl, fund_args, t, dpsi_acc + dpsi_contrib, deps_acc + deps_contrib)
-  end
-
-  # Fast argument calculation with direct list pattern matching
-  defp calculate_arg_fast([], [], acc), do: acc
-  defp calculate_arg_fast([mult | rest_mult], [fund_arg | rest_args], acc) do
-    calculate_arg_fast(rest_mult, rest_args, acc + mult * fund_arg)
-  end
-
-  defp calculate_planetary_nutation(t) do
-    # Calculate planetary arguments (only 14 arguments, fast)
+  defnp calculate_planetary(t) do
+    # Calculate planetary arguments
+    planetary_args = @anomaly_constant + @anomaly_coefficient * t
+    # Update last element - need to wrap scalar in tensor
+    updated_value = Nx.reshape(planetary_args[13] * t, {1})
     planetary_args =
-      Enum.zip(@anomaly_constant, @anomaly_coefficient)
-      |> Enum.map(fn {const, coeff} -> t * coeff + const end)
-      |> List.update_at(-1, fn val -> val * t end)
+      Nx.indexed_put(
+        planetary_args,
+        @index_13_tensor,
+        updated_value
+      )
 
-    # Fast sequential calculation for 687 planetary terms
-    {dpsi_pl, deps_pl} = calculate_planetary_terms_fast(planetary_args, t)
+    # Use pre-computed planetary coefficients
+    arg_mult = @planetary_arg_mult_tensor
+    lon_coeffs = @planetary_lon_coeffs_tensor
+    obl_coeffs = @planetary_obl_coeffs_tensor
+
+    # Take first 687 terms
+    arg_mult_687 = arg_mult[0..686]
+    lon_coeffs_687 = lon_coeffs[0..686]
+    obl_coeffs_687 = obl_coeffs[0..686]
+
+    # Calculate all planetary arguments
+    args = Nx.dot(arg_mult_687, planetary_args)
+    sin_args = Nx.sin(args)
+    cos_args = Nx.cos(args)
+
+    # Planetary contributions: sin*c0 + cos*c1
+    dpsi_pl =
+      Nx.dot(sin_args, lon_coeffs_687[[.., 0]]) +
+        Nx.dot(cos_args, lon_coeffs_687[[.., 1]])
+
+    deps_pl =
+      Nx.dot(sin_args, obl_coeffs_687[[.., 0]]) +
+        Nx.dot(cos_args, obl_coeffs_687[[.., 1]])
 
     {dpsi_pl, deps_pl}
   end
 
-  # HYPER-OPTIMIZED planetary terms - CRUSH PYTHON! 🚀
-  defp calculate_planetary_terms_fast(planetary_args, _t) do
-    # Take first 687 terms only
-    planetary_terms = Enum.take(@planetary_arg_mult, 687)
-    lon_coeffs_687 = Enum.take(@planetary_lon_coeffs, 687)
-    obl_coeffs_687 = Enum.take(@planetary_obl_coeffs, 687)
-
-    calculate_planetary_loop(planetary_terms, lon_coeffs_687, obl_coeffs_687, planetary_args, 0.0, 0.0)
-  end
-
-  # Tail-recursive planetary loop for maximum speed
-  defp calculate_planetary_loop([], [], [], _planetary_args, dpsi_acc, deps_acc), do: {dpsi_acc, deps_acc}
-  
-  defp calculate_planetary_loop([arg_mult | rest_mult], [lon_coeffs | rest_lon], [obl_coeffs | rest_obl], planetary_args, dpsi_acc, deps_acc) do
-    # Fast argument calculation
-    arg = calculate_arg_fast(arg_mult, planetary_args, 0.0)
-    
-    # Calculate sin/cos once
-    sin_arg = :math.sin(arg)
-    cos_arg = :math.cos(arg)
-    
-    # Direct list access for planetary coefficients (no Enum.at!)
-    [lon_c0, lon_c1] = lon_coeffs
-    [obl_c0, obl_c1] = obl_coeffs
-    
-    # Planetary contributions: sin*c0 + cos*c1
-    dpsi_contrib = sin_arg * lon_c0 + cos_arg * lon_c1
-    deps_contrib = sin_arg * obl_c0 + cos_arg * obl_c1
-    
-    # Tail recursive call
-    calculate_planetary_loop(rest_mult, rest_lon, rest_obl, planetary_args, dpsi_acc + dpsi_contrib, deps_acc + deps_contrib)
-  end
-
-  @doc """
-  Calculate the mean obliquity of the ecliptic.
-
-  ## Parameters
-  - `jd_tt` - Julian Date in Terrestrial Time
-
-  ## Returns
-  Mean obliquity in radians.
-  """
-  def mean_obliquity(jd_tt) do
-    # IAU 2000 mean obliquity polynomial (IERS Conventions 2010, 5.40)
-    # Compute time in Julian centuries from epoch J2000.0
+  defnp mean_obliquity_tensor(jd_tt) do
+    # IAU 2000 mean obliquity polynomial
     t = (jd_tt - @j2000) / 36525.0
 
-    # Polynomial coefficients
-    c0 = -0.0000000434
-    c1 = -0.000000576
-    c2 = 0.00200340
-    c3 = -0.0001831
-    c4 = -46.836769
-    c5 = 84381.406
+    # Pre-computed polynomial coefficients
+    c0 = Nx.tensor(-0.0000000434, type: :f64)
+    c1 = Nx.tensor(-0.000000576, type: :f64)
+    c2 = Nx.tensor(0.00200340, type: :f64)
+    c3 = Nx.tensor(-0.0001831, type: :f64)
+    c4 = Nx.tensor(-46.836769, type: :f64)
+    c5 = Nx.tensor(84381.406, type: :f64)
 
-    # Use Horner's method for consistent evaluation with Python
-    # This avoids floating-point precision differences
+    # Horner's method
     result = c0
     result = result * t + c1
     result = result * t + c2
@@ -324,102 +322,44 @@ defmodule Sgp4Ex.IAU2000ANutation do
   end
 
   @doc """
-  Calculate the equation of the equinoxes.
-
-  The equation of the equinoxes is the difference between apparent and mean sidereal time,
-  primarily due to nutation in longitude projected onto the equator.
-
-  ## Parameters
-  - `jd_tt` - Julian Date in Terrestrial Time
-
-  ## Returns
-  The equation of equinoxes in radians.
+  Calculate the mean obliquity of the ecliptic.
   """
-  def equation_of_equinoxes(jd_tt) do
-    # Get nutation in longitude
-    {dpsi, _deps} = iau2000a_nutation(jd_tt)
-
-    # Get mean obliquity
-    epsilon = mean_obliquity(jd_tt)
-
-    # Delegate to pure calculation
-    equation_of_equinoxes_from_components(dpsi, epsilon)
+  def mean_obliquity(jd_tt) when is_float(jd_tt) do
+    jd_tt_tensor = Nx.tensor(jd_tt, type: :f64)
+    mean_obliquity_tensor(jd_tt_tensor) |> Nx.to_number()
   end
 
-  @doc """
-  Calculate equation of equinoxes from pre-computed components.
-  This allows testing Level 4 independently of Level 3.
-
-  Args:
-    dpsi: nutation in longitude (radians)
-    epsilon: mean obliquity (radians)
-
-  Returns equation of equinoxes in radians.
-  """
-  def equation_of_equinoxes_from_components(dpsi, epsilon) do
-    # Main term: dpsi * cos(epsilon) / 10.0
-    # NOTE: Factor of 10 correction matches Skyfield implementation exactly
-    eqeq_main = dpsi * :math.cos(epsilon) / 10.0
-
-    # Add complementary terms for maximum precision
-    # These are small corrections (~0.0008 arcseconds) but easy to implement
-    eqeq_complementary = equation_of_equinoxes_complementary_terms(epsilon)
-
-    eqeq_main + eqeq_complementary
-  end
-
-  # Simplified complementary terms (approximate)
-  # Full implementation would require more complex calculations
-  defp equation_of_equinoxes_complementary_terms(_epsilon) do
-    # Based on Skyfield's typical complementary terms value
-    # This is a rough approximation - full calculation would need planetary positions
-    3.879058773358243e-09  # radians, from our earlier analysis
-  end
-
-  @doc """
-  Calculate the Earth Rotation Angle (ERA).
-
-  ## Parameters
-  - `jd_ut1` - Julian Date in UT1
-  - `fraction_ut1` - Optional fractional day in UT1 (default: 0.0)
-
-  ## Returns
-  Earth rotation angle as a fraction of a full rotation (0.0 to 1.0).
-  """
-  def earth_rotation_angle(jd_ut1, fraction_ut1 \\ 0.0) do
+  defnp earth_rotation_angle_tensor(jd_ut1, fraction_ut1) do
     # From IAU Resolution B1.8 of 2000
-    theta = 0.7790572732640 + 0.00273781191135448 * (jd_ut1 - @j2000 + fraction_ut1)
-    :math.fmod(:math.fmod(theta, 1.0) + :math.fmod(jd_ut1, 1.0) + fraction_ut1, 1.0)
+    theta_base = Nx.tensor(0.7790572732640, type: :f64)
+    theta_rate = Nx.tensor(0.00273781191135448, type: :f64)
+
+    theta = theta_base + theta_rate * (jd_ut1 - @j2000 + fraction_ut1)
+
+    # Normalize to [0, 1)
+    theta_normalized = Nx.remainder(theta, 1.0)
+    jd_frac = Nx.remainder(jd_ut1, 1.0)
+
+    total = theta_normalized + jd_frac + fraction_ut1
+    Nx.remainder(total, 1.0)
   end
 
-  @doc """
-  Calculate Greenwich Mean Sidereal Time (GMST).
-
-  ## Parameters
-  - `jd_ut1` - Julian Date in UT1
-  - `jd_tdb` - Julian Date in Barycentric Dynamical Time (TDB)
-  - `fraction_ut1` - Optional fractional day in UT1 (default: 0.0)
-  - `fraction_tdb` - Optional fractional day in TDB (default: 0.0)
-
-  ## Returns
-  GMST in hours (0.0 to 24.0).
-  """
-  def gmst(jd_ut1, jd_tdb, fraction_ut1 \\ 0.0, fraction_tdb \\ 0.0) do
+  defnp gmst_tensor(jd_ut1, jd_tdb, fraction_ut1, fraction_tdb) do
     # Earth rotation angle
-    theta = earth_rotation_angle(jd_ut1, fraction_ut1)
+    theta = earth_rotation_angle_tensor(jd_ut1, fraction_ut1)
 
-    # Precession-in-RA terms from IAU 2000
+    # Precession-in-RA terms
     t = (jd_tdb - @j2000 + fraction_tdb) / 36525.0
 
-    # Polynomial coefficients for precession
-    c0 = 0.014506
-    c1 = 4612.156534
-    c2 = 1.3915817
-    c3 = -0.00000044
-    c4 = -0.000029956
-    c5 = -0.0000000368
+    # Polynomial coefficients
+    c0 = Nx.tensor(0.014506, type: :f64)
+    c1 = Nx.tensor(4612.156534, type: :f64)
+    c2 = Nx.tensor(1.3915817, type: :f64)
+    c3 = Nx.tensor(-0.00000044, type: :f64)
+    c4 = Nx.tensor(-0.000029956, type: :f64)
+    c5 = Nx.tensor(-0.0000000368, type: :f64)
 
-    # Use Horner's method for consistency
+    # Horner's method
     st = c0
     st = st + c1 * t
     st = st + c2 * t * t
@@ -427,49 +367,55 @@ defmodule Sgp4Ex.IAU2000ANutation do
     st = st + c4 * t * t * t * t
     st = st + c5 * t * t * t * t * t
 
-    :math.fmod(st / 54000.0 + theta * 24.0, 24.0)
+    # Convert to hours and combine with Earth rotation
+    gmst_hours = st / 54000.0 + theta * 24.0
+    Nx.remainder(gmst_hours, 24.0)
   end
 
   @doc """
   Calculate Greenwich Apparent Sidereal Time (GAST).
-
-  GAST includes the equation of the equinoxes, accounting for nutation.
-  This is the primary function used for accurate TEME to geodetic conversions.
-
-  ## Parameters
-  - `jd_ut1` - Julian Date in UT1
-  - `jd_tt` - Julian Date in Terrestrial Time
-  - `fraction_ut1` - Optional fractional day in UT1 (default: 0.0)
-  - `fraction_tt` - Optional fractional day in TT (default: 0.0)
-
-  ## Returns
-  GAST in hours (0.0 to 24.0).
-
-  Unified GAST calculation that works on any Nx backend (CPU/GPU auto-detected).
-  
-  This function automatically uses GPU acceleration when available, falling back 
-  to CPU when not. NO MORE SEPARATE GPU/CPU VERSIONS!
+  Automatically uses CPU or GPU backend based on Nx configuration.
   """
   def gast(jd_ut1, jd_tt, fraction_ut1 \\ 0.0, fraction_tt \\ 0.0) do
-    # Use existing optimized CPU implementation
-    # The key insight: Nx backend selection happens at a higher level
-    # Individual calculations like this are already highly optimized
-    
-    # For simplicity, assume TDB = TT (difference is < 2ms)
+    jd_ut1_tensor = Nx.tensor(jd_ut1, type: :f64)
+    jd_tt_tensor = Nx.tensor(jd_tt, type: :f64)
+    fraction_ut1_tensor = Nx.tensor(fraction_ut1, type: :f64)
+    fraction_tt_tensor = Nx.tensor(fraction_tt, type: :f64)
+
+    gast_tensor = gast_tensor(jd_ut1_tensor, jd_tt_tensor, fraction_ut1_tensor, fraction_tt_tensor)
+    Nx.to_number(gast_tensor)
+  end
+
+  @doc """
+  Tensor version of GAST calculation for chaining operations.
+  """
+  defn gast_tensor(jd_ut1, jd_tt, fraction_ut1, fraction_tt) do
+    # Assume TDB = TT
     jd_tdb = jd_tt
     fraction_tdb = fraction_tt
 
-    # Get GMST
-    gmst_hours = gmst(jd_ut1, jd_tdb, fraction_ut1, fraction_tdb)
+    # Get GMST in tensor form
+    gmst_hours = gmst_tensor(jd_ut1, jd_tdb, fraction_ut1, fraction_tdb)
 
-    # Get equation of equinoxes in radians
-    eqeq_rad = equation_of_equinoxes(jd_tt)
+    # Get nutation and mean obliquity in tensor form
+    {dpsi_tensor, _deps_tensor} = iau2000a_nutation_tensor(jd_tt)
+    epsilon_tensor = mean_obliquity_tensor(jd_tt)
 
-    # Convert equation of equinoxes to hours (radians * 12/π)
-    eqeq_hours = eqeq_rad * 12.0 / :math.pi()
+    # Equation of equinoxes: dpsi * cos(epsilon)
+    eqeq_rad = dpsi_tensor * Nx.cos(epsilon_tensor)
+
+    # Convert to hours
+    eqeq_hours = eqeq_rad * 12.0 / Nx.Constants.pi()
 
     # GAST = GMST + equation of equinoxes
-    :math.fmod(gmst_hours + eqeq_hours, 24.0)
+    gast_hours = gmst_hours + eqeq_hours
+    Nx.remainder(gast_hours, 24.0)
   end
 
+  @doc """
+  Calculate equation of equinoxes from pre-computed components.
+  """
+  def equation_of_equinoxes_from_components(dpsi, epsilon) do
+    dpsi * :math.cos(epsilon)
+  end
 end
