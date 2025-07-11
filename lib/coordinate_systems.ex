@@ -174,12 +174,7 @@ defmodule Sgp4Ex.CoordinateSystems do
     jd_tt = jd_ut1 + 69.19318735599518 / 86400.0
 
     # Get GAST in hours from IAU 2000A module
-    gast_hours =
-      if Keyword.get(opts, :use_gpu, false) do
-        Sgp4Ex.IAU2000ANutation.gast_gpu(jd_ut1, jd_tt)
-      else
-        Sgp4Ex.IAU2000ANutation.gast(jd_ut1, jd_tt)
-      end
+    gast_hours = Sgp4Ex.IAU2000ANutation.gast(jd_ut1, jd_tt)
 
     # Convert to radians
     gast_rad = gast_hours * 15.0 * pi() / 180.0

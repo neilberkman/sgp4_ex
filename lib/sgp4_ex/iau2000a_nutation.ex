@@ -439,36 +439,4 @@ defmodule Sgp4Ex.IAU2000ANutation do
     :math.fmod(gmst_hours + eqeq_hours, 24.0)
   end
 
-  @doc """
-  GPU-optimized GAST calculation.
-  Uses GPU nutation calculations to avoid CPU/GPU transfers.
-  """
-  def gast_gpu(jd_ut1, jd_tt, fraction_ut1 \\ 0.0, fraction_tt \\ 0.0) do
-    # For simplicity, assume TDB = TT (difference is < 2ms)
-    jd_tdb = jd_tt
-    fraction_tdb = fraction_tt
-
-    # Get GMST
-    gmst_hours = gmst(jd_ut1, jd_tdb, fraction_ut1, fraction_tdb)
-
-    # Get equation of equinoxes using GPU nutation
-    eqeq_rad = equation_of_equinoxes_gpu(jd_tt)
-
-    # Convert equation of equinoxes to hours (radians * 12/π)
-    eqeq_hours = eqeq_rad * 12.0 / :math.pi()
-
-    # GAST = GMST + equation of equinoxes
-    :math.fmod(gmst_hours + eqeq_hours, 24.0)
-  end
-
-  defp equation_of_equinoxes_gpu(jd_tt) do
-    # Get nutation using GPU version
-    {dpsi, _deps} = Sgp4Ex.IAU2000ANutationGPU.iau2000a_nutation_gpu(jd_tt)
-
-    # Get mean obliquity
-    epsilon = mean_obliquity(jd_tt)
-
-    # Calculate equation of equinoxes
-    equation_of_equinoxes_from_components(dpsi, epsilon)
-  end
 end
