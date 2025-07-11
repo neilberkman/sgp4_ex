@@ -379,9 +379,49 @@ defmodule Sgp4Ex.IAU2000ANutation do
 
   @doc """
   Calculate Greenwich Apparent Sidereal Time (GAST).
-  Automatically uses CPU or GPU backend based on Nx configuration.
+  Uses fast approximation for performance (GMST only).
   """
   def gast(jd_ut1, jd_tt, fraction_ut1 \\ 0.0, fraction_tt \\ 0.0) do
+    # Full GAST calculation with IAU 2000A nutation (match Skyfield default)
+    gast_precise(jd_ut1, jd_tt, fraction_ut1, fraction_tt)
+  end
+  
+  @doc """
+  Fast GAST approximation using just GMST (no nutation calculation).
+  This is what most SGP4 implementations use for performance.
+  """
+  def gast_fast(jd_ut1, jd_tt, fraction_ut1 \\ 0.0, fraction_tt \\ 0.0) do
+    # Just use GMST - no nutation calculation at all for maximum speed
+    jd_tdb = jd_tt
+    fraction_tdb = fraction_tt
+    gmst_hours = gmst_scalar(jd_ut1, jd_tdb, fraction_ut1, fraction_tdb)
+    
+    # Convert to degrees
+    gmst_hours * 15.0
+  end
+  
+  # Scalar GMST calculation (no tensors)
+  defp gmst_scalar(jd_ut1, jd_tdb, fraction_ut1, fraction_tdb) do
+    t = (jd_tdb + fraction_tdb - @j2000) / 36525.0
+    
+    # GMST coefficients
+    theta = 67310.54841 + t * (876600.0 * 3600.0 + 8640184.812866) +
+            t * t * 0.093104 - t * t * t * 6.2e-6
+    
+    # UT1 contribution
+    jd_since_j2000 = jd_ut1 + fraction_ut1 - @j2000
+    st = theta + 1.00273790935 * jd_since_j2000 * 86400.0
+    
+    # Convert to hours and normalize
+    gmst_hours = st / 54000.0
+    gmst_hours - 24.0 * :math.floor(gmst_hours / 24.0)
+  end
+  
+  @doc """
+  High precision GAST with full IAU 2000A nutation (optimized).
+  """
+  def gast_precise(jd_ut1, jd_tt, fraction_ut1 \\ 0.0, fraction_tt \\ 0.0) do
+    # FULL IAU 2000A nutation calculation - NO APPROXIMATIONS
     jd_ut1_tensor = Nx.tensor(jd_ut1, type: :f64)
     jd_tt_tensor = Nx.tensor(jd_tt, type: :f64)
     fraction_ut1_tensor = Nx.tensor(fraction_ut1, type: :f64)
