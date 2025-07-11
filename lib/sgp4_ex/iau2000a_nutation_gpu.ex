@@ -221,9 +221,12 @@ defmodule Sgp4Ex.IAU2000ANutationGPU do
     lon_coeffs = @lunisolar_lon_coeffs_tensor
     obl_coeffs = @lunisolar_obl_coeffs_tensor
 
+    # Lunisolar calculations only need first 5 fundamental arguments
+    fund_args_5 = fund_args[0..4]
+
     # Calculate all arguments at once
-    # args shape: [1365]
-    args = Nx.dot(arg_mult, fund_args)
+    # args shape: [678] (lunisolar terms)
+    args = Nx.dot(arg_mult, fund_args_5)
 
     # Sin and cos for all arguments
     sin_args = Nx.sin(args)
@@ -259,12 +262,13 @@ defmodule Sgp4Ex.IAU2000ANutationGPU do
   defnp calculate_planetary_gpu(t) do
     # Calculate planetary arguments
     planetary_args = @anomaly_constant + @anomaly_coefficient * t
-    # Update last element
+    # Update last element - need to wrap scalar in tensor
+    updated_value = Nx.reshape(planetary_args[13] * t, {1})
     planetary_args =
       Nx.indexed_put(
         planetary_args,
         @index_13_tensor,
-        planetary_args[13] * t
+        updated_value
       )
 
     # Use pre-computed planetary coefficients
