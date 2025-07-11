@@ -34,7 +34,7 @@ defmodule Sgp4Ex.IAU2000ANutation do
   conversions when the `use_iau2000a: true` option is specified (now the default).
   """
 
-  # Remove Nx.Defn import - go back to CPU-only calculation
+  import Nx.Defn
 
   # Use exact value from Skyfield to ensure precision
   @asec2rad 4.84813681109535984270e-06
@@ -196,69 +196,80 @@ defmodule Sgp4Ex.IAU2000ANutation do
   end
 
   defp calculate_lunisolar_nutation(fund_args, t) do
-    # Same setup as original
-    arg_mult_matrix = Nx.tensor(@lunisolar_arg_mult, type: :s64)
-    lon_coeffs_matrix = Nx.tensor(@lunisolar_lon_coeffs, type: :f64)
-    obl_coeffs_matrix = Nx.tensor(@lunisolar_obl_coeffs, type: :f64)
+    # Fast path: avoid tensor overhead for single calculations
+    # Convert fund_args tensor to list once
+    fund_args_list = Nx.to_list(fund_args)
+    
+    # Use optimized sequential calculation matching Skyfield
+    {dpsi_sum, deps_sum} = calculate_lunisolar_terms_fast(fund_args_list, t)
+    
+    {dpsi_sum, deps_sum}
+  end
 
-    # Same argument calculation
-    args = Nx.dot(arg_mult_matrix, fund_args)
-    sin_args = Nx.sin(args)
-    cos_args = Nx.cos(args)
-
-    # Calculate dpsi contributions with vectorized operations
-    dpsi_term1 = Nx.dot(sin_args, lon_coeffs_matrix[[.., 0]])
-    dpsi_term2_base = Nx.dot(sin_args, lon_coeffs_matrix[[.., 1]])
-    dpsi_term2 = Nx.multiply(dpsi_term2_base, t)
-    dpsi_term3 = Nx.dot(cos_args, lon_coeffs_matrix[[.., 2]])
-    dpsi = Nx.add(dpsi_term1, dpsi_term2) |> Nx.add(dpsi_term3)
-
-    deps_term1 = Nx.dot(cos_args, obl_coeffs_matrix[[.., 0]])
-    deps_term2_base = Nx.dot(cos_args, obl_coeffs_matrix[[.., 1]])
-    deps_term2 = Nx.multiply(deps_term2_base, t)
-    deps_term3 = Nx.dot(sin_args, obl_coeffs_matrix[[.., 2]])
-    deps = Nx.add(deps_term1, deps_term2) |> Nx.add(deps_term3)
-
-    {Nx.to_number(dpsi), Nx.to_number(deps)}
+  # Fast sequential calculation without tensor overhead
+  defp calculate_lunisolar_terms_fast(fund_args_list, t) do
+    @lunisolar_arg_mult
+    |> Enum.zip(Enum.zip(@lunisolar_lon_coeffs, @lunisolar_obl_coeffs))
+    |> Enum.reduce({0.0, 0.0}, fn {arg_mult, {lon_coeffs, obl_coeffs}}, {dpsi_acc, deps_acc} ->
+      # Calculate argument for this term
+      arg = Enum.zip(arg_mult, fund_args_list)
+            |> Enum.reduce(0.0, fn {mult, fund_arg}, acc -> acc + mult * fund_arg end)
+      
+      # Calculate sin/cos once
+      sin_arg = :math.sin(arg)
+      cos_arg = :math.cos(arg)
+      
+      # Longitude contribution: sin*c0 + sin*c1*t + cos*c2
+      dpsi_contrib = sin_arg * Enum.at(lon_coeffs, 0) + 
+                     sin_arg * Enum.at(lon_coeffs, 1) * t + 
+                     cos_arg * Enum.at(lon_coeffs, 2)
+      
+      # Obliquity contribution: cos*c0 + cos*c1*t + sin*c2  
+      deps_contrib = cos_arg * Enum.at(obl_coeffs, 0) + 
+                     cos_arg * Enum.at(obl_coeffs, 1) * t + 
+                     sin_arg * Enum.at(obl_coeffs, 2)
+      
+      {dpsi_acc + dpsi_contrib, deps_acc + deps_contrib}
+    end)
   end
 
   defp calculate_planetary_nutation(t) do
-    # Calculate planetary arguments
+    # Calculate planetary arguments (only 14 arguments, fast)
     planetary_args =
       Enum.zip(@anomaly_constant, @anomaly_coefficient)
       |> Enum.map(fn {const, coeff} -> t * coeff + const end)
       |> List.update_at(-1, fn val -> val * t end)
 
-    # Convert to tensors for vectorized calculation
-    planetary_args_tensor = Nx.tensor(planetary_args, type: :f64)
-    arg_mult_tensor = Nx.tensor(@planetary_arg_mult, type: :s64)
-    lon_coeffs_tensor = Nx.tensor(@planetary_lon_coeffs, type: :f64)
-    obl_coeffs_tensor = Nx.tensor(@planetary_obl_coeffs, type: :f64)
+    # Fast sequential calculation for 687 planetary terms
+    {dpsi_pl, deps_pl} = calculate_planetary_terms_fast(planetary_args, t)
 
-    # Take first 687 terms (same as original)
-    arg_mult_687 = arg_mult_tensor[0..686]
-    lon_coeffs_687 = lon_coeffs_tensor[0..686]
-    obl_coeffs_687 = obl_coeffs_tensor[0..686]
+    {dpsi_pl, deps_pl}
+  end
 
-    # Vectorized calculation for all planetary terms
-    args = Nx.dot(arg_mult_687, planetary_args_tensor)
-    sin_args = Nx.sin(args)
-    cos_args = Nx.cos(args)
+  # Fast sequential calculation for planetary terms
+  defp calculate_planetary_terms_fast(planetary_args, _t) do
+    # Take first 687 terms only
+    planetary_terms = Enum.take(@planetary_arg_mult, 687)
+    lon_coeffs_687 = Enum.take(@planetary_lon_coeffs, 687)
+    obl_coeffs_687 = Enum.take(@planetary_obl_coeffs, 687)
 
-    # Calculate planetary contributions: sin*c0 + cos*c1
-    dpsi_pl =
-      Nx.add(
-        Nx.dot(sin_args, lon_coeffs_687[[.., 0]]),
-        Nx.dot(cos_args, lon_coeffs_687[[.., 1]])
-      )
-
-    deps_pl =
-      Nx.add(
-        Nx.dot(sin_args, obl_coeffs_687[[.., 0]]),
-        Nx.dot(cos_args, obl_coeffs_687[[.., 1]])
-      )
-
-    {Nx.to_number(dpsi_pl), Nx.to_number(deps_pl)}
+    planetary_terms
+    |> Enum.zip(Enum.zip(lon_coeffs_687, obl_coeffs_687))
+    |> Enum.reduce({0.0, 0.0}, fn {arg_mult, {lon_coeffs, obl_coeffs}}, {dpsi_acc, deps_acc} ->
+      # Calculate argument for this planetary term
+      arg = Enum.zip(arg_mult, planetary_args)
+            |> Enum.reduce(0.0, fn {mult, planet_arg}, acc -> acc + mult * planet_arg end)
+      
+      # Calculate sin/cos once
+      sin_arg = :math.sin(arg)
+      cos_arg = :math.cos(arg)
+      
+      # Planetary contributions: sin*c0 + cos*c1
+      dpsi_contrib = sin_arg * Enum.at(lon_coeffs, 0) + cos_arg * Enum.at(lon_coeffs, 1)
+      deps_contrib = sin_arg * Enum.at(obl_coeffs, 0) + cos_arg * Enum.at(obl_coeffs, 1)
+      
+      {dpsi_acc + dpsi_contrib, deps_acc + deps_contrib}
+    end)
   end
 
   @doc """
