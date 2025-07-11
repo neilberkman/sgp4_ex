@@ -50,8 +50,20 @@
 ## THE ACTUAL PROBLEM
 Python Skyfield does full IAU 2000A nutation in 0.027ms. We do the same calculation in 21ms on GPU. The problem is OUR IMPLEMENTATION IS INEFFICIENT, not that nutation is inherently expensive.
 
+## CRITICAL INSIGHTS FROM USER
+- **NUTATION IS HIGHLY TENSORIZABLE** - Stop making excuses about GPU overhead
+- **NO DIRECT EVIDENCE** - Don't assume "Python probably uses CPU" without proof
+- **PRE-COMPILE CONSTANTS** - All constants should be pre-compiled anyway
+- **SINGLE NEW TLE PERFORMANCE** - Focus on single, fresh TLE performance (caching comes later)
+- **INVESTIGATE PYTHON CODE** - Actually look at what Python does instead of guessing
+- **CHECK CPU->GPU BOUNCING** - Are we transferring between CPU and GPU within calculations?
+- **PURE TENSOR OPERATIONS** - All nutation should be pure tensor ops, no CPU calls mixed in
+
 ## NEVER FORGET
 - Don't blame the calculation - blame the implementation
 - Python proves it can be fast, so we can be fast too
 - Always test on GCP where user is paying money
 - JIT warmup is required for fair performance comparison
+- INVESTIGATE PYTHON IMPLEMENTATION before making assumptions
+- Pre-compile ALL constants, not just some
+- Nutation should be highly optimized with tensors, not avoided
