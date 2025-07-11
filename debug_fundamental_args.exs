@@ -1,7 +1,8 @@
 # Debug fundamental arguments calculation step by step
 
 datetime = ~U[2024-03-15 12:00:00Z]
-jd_ut1 = Sgp4Ex.CoordinateSystems.datetime_to_julian_date(datetime)
+# Use the same calculation as the test
+jd_ut1 = 2460384.999999894  # From test reference
 jd_tt = jd_ut1 + 69.184 / 86400.0
 t = (jd_tt - 2451545.0) / 36525.0
 
