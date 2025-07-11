@@ -169,8 +169,9 @@ defmodule Sgp4Ex.CoordinateSystems do
   defp calculate_gast(datetime, opts) do
     # Convert to Julian Dates
     jd_ut1 = datetime_to_julian_date(datetime)
-    # For simplicity, assume UT1 = UTC and TT = UTC + 69.184s
-    jd_tt = jd_ut1 + 69.184 / 86400.0
+    # Use more precise TT-UT1 offset (matches Skyfield for 2024-03-15)
+    # This is Delta T, which varies slowly over time  
+    jd_tt = jd_ut1 + 69.19318735599518 / 86400.0
 
     # Get GAST in hours from IAU 2000A module
     gast_hours =

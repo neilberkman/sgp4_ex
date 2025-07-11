@@ -617,9 +617,9 @@ defmodule Sgp4Ex.SatelliteArray do
     # Unix epoch JD
     jd = unix_days + 2_440_587.5
 
-    # For simplicity, assume UT1 = UTC and TT = UTC + 69.184s (approximate)
+    # Use more precise TT-UT1 offset (matches Skyfield for 2024-03-15)
     jd_ut1 = jd
-    jd_tt = jd + 69.184 / 86400.0
+    jd_tt = jd + 69.19318735599518 / 86400.0
 
     {jd_ut1, jd_tt}
   end

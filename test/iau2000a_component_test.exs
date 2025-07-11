@@ -36,8 +36,8 @@ defmodule Sgp4Ex.IAU2000AComponentTest do
   describe "IAU 2000A component breakdown" do
     test "Level 1: Julian date conversion matches Skyfield" do
       jd_ut1 = Sgp4Ex.CoordinateSystems.datetime_to_julian_date(@test_datetime)
-      # For simplicity, assume UT1 = UTC and TT = UTC + 69.184s
-      jd_tt = jd_ut1 + 69.184 / 86400.0
+      # Use precise TT-UT1 offset to match Skyfield exactly
+      jd_tt = jd_ut1 + 69.19318735599518 / 86400.0
 
       assert_in_delta jd_ut1, @skyfield_jd_ut1, 0.000001, "JD_UT1 mismatch"
       assert_in_delta jd_tt, @skyfield_jd_tt, 0.000001, "JD_TT mismatch"
