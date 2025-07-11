@@ -4,10 +4,12 @@
 # Tests both "optimized" (same TLE) and "realistic" (fresh TLE) performance
 
 Mix.install([
-  {:sgp4_ex, path: "."}
+  {:sgp4_ex, path: "."},
+  {:exla, "~> 0.9"}
 ])
 
-Application.put_env(:exla, :default_client, :host)
+# Let EXLA auto-detect GPU (don't force CPU!)
+# Application.put_env(:exla, :default_client, :host)  # <-- REMOVED CPU FORCING!
 
 defmodule UnifiedBench do
   def time_microseconds(times \\ 100, func) do
@@ -41,6 +43,16 @@ test_time = ~U[2024-03-15 12:00:00Z]
 
 IO.puts("🚀 UNIFIED BENCHMARK: Local vs GCP Performance Test")
 IO.puts("=" <> String.duplicate("=", 59))
+
+# Check what backend we're actually using
+try do
+  backend = Nx.default_backend()
+  IO.puts("🔍 Backend: #{backend}")
+  test_tensor = Nx.tensor([1, 2, 3])
+  IO.puts("🔍 Test tensor: #{inspect(test_tensor)}")
+rescue
+  _ -> IO.puts("🔍 Nx not available in this context")
+end
 
 # Warm up Nx/EXLA with different TLEs
 IO.puts("\n🔥 WARMING UP Nx/EXLA with different TLEs...")
