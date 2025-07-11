@@ -34,7 +34,7 @@ defmodule Sgp4Ex.IAU2000ANutation do
   conversions when the `use_iau2000a: true` option is specified (now the default).
   """
 
-  import Nx.Defn
+  # Remove Nx.Defn import - go back to CPU-only calculation
 
   # Use exact value from Skyfield to ensure precision
   @asec2rad 4.84813681109535984270e-06
