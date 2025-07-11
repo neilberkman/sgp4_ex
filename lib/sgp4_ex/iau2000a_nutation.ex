@@ -206,31 +206,40 @@ defmodule Sgp4Ex.IAU2000ANutation do
     {dpsi_sum, deps_sum}
   end
 
-  # Fast sequential calculation without tensor overhead
+  # HYPER-OPTIMIZED sequential calculation - BEAT PYTHON! 🔥
   defp calculate_lunisolar_terms_fast(fund_args_list, t) do
-    @lunisolar_arg_mult
-    |> Enum.zip(Enum.zip(@lunisolar_lon_coeffs, @lunisolar_obl_coeffs))
-    |> Enum.reduce({0.0, 0.0}, fn {arg_mult, {lon_coeffs, obl_coeffs}}, {dpsi_acc, deps_acc} ->
-      # Calculate argument for this term
-      arg = Enum.zip(arg_mult, fund_args_list)
-            |> Enum.reduce(0.0, fn {mult, fund_arg}, acc -> acc + mult * fund_arg end)
-      
-      # Calculate sin/cos once
-      sin_arg = :math.sin(arg)
-      cos_arg = :math.cos(arg)
-      
-      # Longitude contribution: sin*c0 + sin*c1*t + cos*c2
-      dpsi_contrib = sin_arg * Enum.at(lon_coeffs, 0) + 
-                     sin_arg * Enum.at(lon_coeffs, 1) * t + 
-                     cos_arg * Enum.at(lon_coeffs, 2)
-      
-      # Obliquity contribution: cos*c0 + cos*c1*t + sin*c2  
-      deps_contrib = cos_arg * Enum.at(obl_coeffs, 0) + 
-                     cos_arg * Enum.at(obl_coeffs, 1) * t + 
-                     sin_arg * Enum.at(obl_coeffs, 2)
-      
-      {dpsi_acc + dpsi_contrib, deps_acc + deps_contrib}
-    end)
+    calculate_lunisolar_loop(@lunisolar_arg_mult, @lunisolar_lon_coeffs, @lunisolar_obl_coeffs, fund_args_list, t, 0.0, 0.0)
+  end
+
+  # Tail-recursive loop for maximum speed
+  defp calculate_lunisolar_loop([], [], [], _fund_args, _t, dpsi_acc, deps_acc), do: {dpsi_acc, deps_acc}
+  
+  defp calculate_lunisolar_loop([arg_mult | rest_mult], [lon_coeffs | rest_lon], [obl_coeffs | rest_obl], fund_args, t, dpsi_acc, deps_acc) do
+    # Fast argument calculation with direct list operations
+    arg = calculate_arg_fast(arg_mult, fund_args, 0.0)
+    
+    # Calculate sin/cos once
+    sin_arg = :math.sin(arg)
+    cos_arg = :math.cos(arg)
+    
+    # Direct list access for coefficients (no Enum.at!)
+    [lon_c0, lon_c1, lon_c2] = lon_coeffs
+    [obl_c0, obl_c1, obl_c2] = obl_coeffs
+    
+    # Longitude contribution: sin*c0 + sin*c1*t + cos*c2
+    dpsi_contrib = sin_arg * lon_c0 + sin_arg * lon_c1 * t + cos_arg * lon_c2
+    
+    # Obliquity contribution: cos*c0 + cos*c1*t + sin*c2  
+    deps_contrib = cos_arg * obl_c0 + cos_arg * obl_c1 * t + sin_arg * obl_c2
+    
+    # Tail recursive call
+    calculate_lunisolar_loop(rest_mult, rest_lon, rest_obl, fund_args, t, dpsi_acc + dpsi_contrib, deps_acc + deps_contrib)
+  end
+
+  # Fast argument calculation with direct list pattern matching
+  defp calculate_arg_fast([], [], acc), do: acc
+  defp calculate_arg_fast([mult | rest_mult], [fund_arg | rest_args], acc) do
+    calculate_arg_fast(rest_mult, rest_args, acc + mult * fund_arg)
   end
 
   defp calculate_planetary_nutation(t) do
@@ -246,30 +255,37 @@ defmodule Sgp4Ex.IAU2000ANutation do
     {dpsi_pl, deps_pl}
   end
 
-  # Fast sequential calculation for planetary terms
+  # HYPER-OPTIMIZED planetary terms - CRUSH PYTHON! 🚀
   defp calculate_planetary_terms_fast(planetary_args, _t) do
     # Take first 687 terms only
     planetary_terms = Enum.take(@planetary_arg_mult, 687)
     lon_coeffs_687 = Enum.take(@planetary_lon_coeffs, 687)
     obl_coeffs_687 = Enum.take(@planetary_obl_coeffs, 687)
 
-    planetary_terms
-    |> Enum.zip(Enum.zip(lon_coeffs_687, obl_coeffs_687))
-    |> Enum.reduce({0.0, 0.0}, fn {arg_mult, {lon_coeffs, obl_coeffs}}, {dpsi_acc, deps_acc} ->
-      # Calculate argument for this planetary term
-      arg = Enum.zip(arg_mult, planetary_args)
-            |> Enum.reduce(0.0, fn {mult, planet_arg}, acc -> acc + mult * planet_arg end)
-      
-      # Calculate sin/cos once
-      sin_arg = :math.sin(arg)
-      cos_arg = :math.cos(arg)
-      
-      # Planetary contributions: sin*c0 + cos*c1
-      dpsi_contrib = sin_arg * Enum.at(lon_coeffs, 0) + cos_arg * Enum.at(lon_coeffs, 1)
-      deps_contrib = sin_arg * Enum.at(obl_coeffs, 0) + cos_arg * Enum.at(obl_coeffs, 1)
-      
-      {dpsi_acc + dpsi_contrib, deps_acc + deps_contrib}
-    end)
+    calculate_planetary_loop(planetary_terms, lon_coeffs_687, obl_coeffs_687, planetary_args, 0.0, 0.0)
+  end
+
+  # Tail-recursive planetary loop for maximum speed
+  defp calculate_planetary_loop([], [], [], _planetary_args, dpsi_acc, deps_acc), do: {dpsi_acc, deps_acc}
+  
+  defp calculate_planetary_loop([arg_mult | rest_mult], [lon_coeffs | rest_lon], [obl_coeffs | rest_obl], planetary_args, dpsi_acc, deps_acc) do
+    # Fast argument calculation
+    arg = calculate_arg_fast(arg_mult, planetary_args, 0.0)
+    
+    # Calculate sin/cos once
+    sin_arg = :math.sin(arg)
+    cos_arg = :math.cos(arg)
+    
+    # Direct list access for planetary coefficients (no Enum.at!)
+    [lon_c0, lon_c1] = lon_coeffs
+    [obl_c0, obl_c1] = obl_coeffs
+    
+    # Planetary contributions: sin*c0 + cos*c1
+    dpsi_contrib = sin_arg * lon_c0 + cos_arg * lon_c1
+    deps_contrib = sin_arg * obl_c0 + cos_arg * obl_c1
+    
+    # Tail recursive call
+    calculate_planetary_loop(rest_mult, rest_lon, rest_obl, planetary_args, dpsi_acc + dpsi_contrib, deps_acc + deps_contrib)
   end
 
   @doc """
