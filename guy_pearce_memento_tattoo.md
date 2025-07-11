@@ -58,6 +58,8 @@ Python Skyfield does full IAU 2000A nutation in 0.027ms. We do the same calculat
 - **INVESTIGATE PYTHON CODE** - Actually look at what Python does instead of guessing
 - **CHECK CPU->GPU BOUNCING** - Are we transferring between CPU and GPU within calculations?
 - **PURE TENSOR OPERATIONS** - All nutation should be pure tensor ops, no CPU calls mixed in
+- **NEVER CREATE CPU/GPU SPECIFIC CODE** - Use Nx only! Nx will choose the backend automatically!
+- **20TH EPIPHANY ALERT** - I keep "discovering" the tensor bouncing issue then breaking it again
 
 ## NEVER FORGET
 - Don't blame the calculation - blame the implementation

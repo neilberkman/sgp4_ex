@@ -39,11 +39,86 @@ defmodule Sgp4Ex.CoordinateSystems do
   @spec teme_to_geodetic({float, float, float}, DateTime.t(), keyword()) ::
           {:ok, %{latitude: float, longitude: float, altitude_km: float}}
   def teme_to_geodetic({x_teme, y_teme, z_teme}, datetime, opts \\ []) do
-    # First convert TEME to ECEF
-    {x_ecef, y_ecef, z_ecef} = teme_to_ecef({x_teme, y_teme, z_teme}, datetime, opts)
-
-    # Then convert ECEF to Geodetic
-    ecef_to_geodetic({x_ecef, y_ecef, z_ecef})
+    # Convert datetime to julian date once
+    jd = datetime_to_julian_date(datetime)
+    
+    # Use pure tensor pipeline
+    teme_tensor = Nx.tensor([x_teme, y_teme, z_teme], type: :f64)
+    jd_tensor = Nx.tensor(jd, type: :f64)
+    result_tensor = teme_to_geodetic_tensor(teme_tensor, jd_tensor)
+    
+    # Extract results
+    lat = Nx.to_number(result_tensor[0])
+    lon = Nx.to_number(result_tensor[1]) 
+    alt = Nx.to_number(result_tensor[2])
+    
+    {:ok, %{latitude: lat, longitude: lon, altitude_km: alt}}
+  end
+  
+  # Pure tensor version - no scalar conversions
+  defn teme_to_geodetic_tensor(teme_position, datetime_jd) do
+    # Convert to ECEF using tensors only
+    jd_ut1 = datetime_jd
+    jd_tt = jd_ut1 + 69.184 / 86400.0
+    
+    # GAST calculation - pure tensors
+    gast_hours = Sgp4Ex.IAU2000ANutation.gast_tensor(
+      jd_ut1, jd_tt, Nx.tensor(0.0), Nx.tensor(0.0)
+    )
+    gast_rad = gast_hours * Nx.Constants.pi() / 12.0
+    
+    # TEME to ECEF rotation
+    cos_gast = Nx.cos(gast_rad)
+    sin_gast = Nx.sin(gast_rad)
+    
+    x_teme = teme_position[0]
+    y_teme = teme_position[1] 
+    z_teme = teme_position[2]
+    
+    x_ecef = cos_gast * x_teme + sin_gast * y_teme
+    y_ecef = -sin_gast * x_teme + cos_gast * y_teme
+    z_ecef = z_teme
+    
+    # ECEF to Geodetic - pure tensors
+    ecef_to_geodetic_tensor(Nx.stack([x_ecef, y_ecef, z_ecef]))
+  end
+  
+  # Pure tensor version of ECEF to geodetic conversion
+  defn ecef_to_geodetic_tensor(ecef_position) do
+    x = ecef_position[0]
+    y = ecef_position[1] 
+    z = ecef_position[2]
+    
+    # WGS84 constants as tensors
+    a = Nx.tensor(@wgs84_a, type: :f64)
+    e2 = Nx.tensor(@wgs84_e2, type: :f64)
+    
+    # Iterative solution for geodetic coordinates
+    p = Nx.sqrt(x * x + y * y)
+    
+    # Initial latitude estimate
+    lat = Nx.atan2(z, p * (1.0 - e2))
+    
+    # Iterate to convergence (3 iterations sufficient)
+    {lat, _} = while {lat, 0}, Nx.less(Nx.tensor(1), Nx.tensor(4)) do
+      sin_lat = Nx.sin(lat)
+      n = a / Nx.sqrt(1.0 - e2 * sin_lat * sin_lat)
+      h = p / Nx.cos(lat) - n
+      lat_new = Nx.atan2(z, p * (1.0 - e2 * n / (n + h)))
+      {lat_new, 1}
+    end
+    
+    # Final calculations
+    sin_lat = Nx.sin(lat)
+    n = a / Nx.sqrt(1.0 - e2 * sin_lat * sin_lat)
+    h = p / Nx.cos(lat) - n
+    lon = Nx.atan2(y, x)
+    
+    # Convert to degrees
+    lat_deg = lat * 180.0 / Nx.Constants.pi()
+    lon_deg = lon * 180.0 / Nx.Constants.pi()
+    
+    Nx.stack([lat_deg, lon_deg, h])
   end
 
   @doc """
