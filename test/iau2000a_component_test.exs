@@ -12,9 +12,9 @@ defmodule Sgp4Ex.IAU2000AComponentTest do
   # Skyfield reference values for 2024-03-15 12:00:00 UTC
   @skyfield_jd_ut1 2460384.999999894
   @skyfield_jd_tt 2460385.000800741
-  @skyfield_gast_hours 23.572220420489195
+  @skyfield_gast_hours 23.57214131204937
   @skyfield_gmst_hours 23.572220416610136
-  @skyfield_eq_eq_hours 3.879058773358244e-09
+  @skyfield_eq_eq_hours -7.909984537854104e-5
 
   # Fundamental arguments (radians) - ACTUAL Skyfield output
   @skyfield_l 1.213214596930936        # Moon mean anomaly
@@ -110,16 +110,16 @@ defmodule Sgp4Ex.IAU2000AComponentTest do
     test "Level 6: Final GAST value matches Skyfield" do
       # Test the final GAST value that gets used in coordinate rotation
       
-      # Get our Julian dates
-      jd_ut1 = Sgp4Ex.CoordinateSystems.datetime_to_julian_date(@test_datetime)
-      jd_tt = jd_ut1 + 69.184 / 86400.0
+      # Use precise Julian dates to match Skyfield exactly
+      jd_ut1 = @skyfield_jd_ut1
+      jd_tt = @skyfield_jd_tt
       
       # Calculate GAST using our implementation
       gast_hours = Sgp4Ex.IAU2000ANutation.gast(jd_ut1, jd_tt)
       
       # Compare with Skyfield reference value (hours)
       # Allow for small remaining differences due to implementation details
-      assert_in_delta gast_hours, @skyfield_gast_hours, 0.0001, "GAST mismatch"
+      assert_in_delta gast_hours, @skyfield_gast_hours, 0.000001, "GAST mismatch"
     end
   end
 end
