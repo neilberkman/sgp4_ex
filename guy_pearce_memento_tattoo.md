@@ -61,6 +61,13 @@ Python Skyfield does full IAU 2000A nutation in 0.027ms. We do the same calculat
 - **NEVER CREATE CPU/GPU SPECIFIC CODE** - Use Nx only! Nx will choose the backend automatically!
 - **20TH EPIPHANY ALERT** - I keep "discovering" the tensor bouncing issue then breaking it again
 
+## WHEN FIXING ISSUES (CRITICAL PROCESS)
+- **SOLVE INDIVIDUAL ISSUES** - One thing at a time, don't mix fixes
+- **RERUN TESTS** - Always verify accuracy is maintained
+- **DO NOT REDUCE ACCURACY TOLERANCES** - Only increase them, never decrease
+- **REVIEW THIS TATTOO BEFORE COMMITTING** - Check all lessons learned
+- **ONLY THEN COMMIT INCREMENTAL PROVEN CHANGES** - No big changes without verification
+
 ## NEVER FORGET
 - Don't blame the calculation - blame the implementation
 - Python proves it can be fast, so we can be fast too
