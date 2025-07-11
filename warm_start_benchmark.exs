@@ -1,10 +1,10 @@
 #!/usr/bin/env elixir
 
-# CPU-only mode (no GPU available on this system)
-Application.put_env(:exla, :clients, host: [platform: :host])
-Application.put_env(:exla, :default_client, :host)
+# Use GPU for all operations
+Application.put_env(:exla, :clients, cuda: [platform: :cuda])
+Application.put_env(:exla, :default_client, :cuda)
 Nx.default_backend(EXLA.Backend)
-IO.puts("🖥️  CPU-only mode (no CUDA/GPU platform available)")
+IO.puts("🚀 USING GPU backend for all operations")
 
 # Different TLEs for warm-up (real TLEs from database)
 warmup_tles = [
