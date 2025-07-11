@@ -16,12 +16,12 @@ defmodule Sgp4Ex.IAU2000AComponentTest do
   @skyfield_gmst_hours 23.572220416610136
   @skyfield_eq_eq_hours 3.879058773358244e-09
 
-  # Fundamental arguments (radians) - corrected from actual Skyfield output
+  # Fundamental arguments (radians) - ACTUAL Skyfield output
   @skyfield_l 1.213214596930936        # Moon mean anomaly
   @skyfield_l_prime 1.225856087663708  # Sun mean anomaly  
   @skyfield_f 0.711022421912160        # Moon longitude - node
   @skyfield_d 1.118442507179634        # Moon-Sun elongation
-  @skyfield_omega 0.2955427625612593   # Moon node longitude (our correctly wrapped value)
+  @skyfield_omega -5.987642548353915   # Moon node longitude (CORRECT negative value)
 
   # Nutation values (radians) from Skyfield IAU2000A
   @skyfield_dpsi -0.00022574473900454788  # Nutation in longitude

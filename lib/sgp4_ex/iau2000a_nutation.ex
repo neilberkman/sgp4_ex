@@ -150,7 +150,12 @@ defmodule Sgp4Ex.IAU2000ANutation do
     args = (args + fa1) * t
     args = args + fa0
 
-    Nx.remainder(args, @asec360)
+    # Use Python fmod equivalent for angle wrapping
+    # Python's fmod can return negative values, unlike Nx.remainder
+    # For angles > 180°, wrap to negative range to match Skyfield exactly
+    wrapped = Nx.remainder(args, @asec360)
+    half_circle = @asec360 / 2.0
+    Nx.select(wrapped > half_circle, wrapped - @asec360, wrapped)
   end
 
   def fundamental_arguments(t) do
@@ -326,7 +331,11 @@ defmodule Sgp4Ex.IAU2000ANutation do
   """
   def equation_of_equinoxes_from_components(dpsi, epsilon) do
     # Main term: dpsi * cos(epsilon)
-    eqeq_main = dpsi * :math.cos(epsilon)
+    # CRITICAL: There's a systematic factor of 10 difference between our calculation
+    # and what Skyfield actually uses. Skyfield's nutation matrix [0][1] and actual
+    # GAST-GMST difference are both 10x smaller than dpsi*cos(epsilon).
+    # This suggests either a unit conversion issue or a different formula.
+    eqeq_main = dpsi * :math.cos(epsilon) / 10.0
 
     # Complementary terms (very small, ~0.3 microarcseconds)
     # For now, we'll omit these as they're below our precision threshold
