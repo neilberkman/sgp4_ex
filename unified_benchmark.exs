@@ -1,12 +1,8 @@
-#!/usr/bin/env elixir
+#!/usr/bin/env mix run
 
-# UNIFIED BENCHMARK: Same conditions for local + GCP testing
+# UNIFIED BENCHMARK: Same conditions for local + GCP testing  
 # Tests both "optimized" (same TLE) and "realistic" (fresh TLE) performance
-
-Mix.install([
-  {:sgp4_ex, path: "."},
-  {:exla, "~> 0.9"}
-])
+# Uses existing CUDA EXLA installation (not Mix.install CPU-only version!)
 
 # Let EXLA auto-detect GPU (don't force CPU!)
 # Application.put_env(:exla, :default_client, :host)  # <-- REMOVED CPU FORCING!
