@@ -26,6 +26,8 @@ defmodule Sgp4Ex.CoordinateSystems do
   ## Parameters
   - `teme_position` - Position in TEME frame {x, y, z} in km
   - `datetime` - UTC datetime for the position
+  - `opts` - Options (optional)
+    - `:use_gmst` - Use GMST instead of GMAT (default: false)
 
   ## Returns
   `{:ok, %{latitude: lat, longitude: lon, altitude_km: alt}}` where:
@@ -33,11 +35,11 @@ defmodule Sgp4Ex.CoordinateSystems do
   - `longitude` - Geodetic longitude in degrees (-180 to 180)
   - `altitude_km` - Height above WGS84 ellipsoid in kilometers
   """
-  @spec teme_to_geodetic({float, float, float}, DateTime.t()) ::
+  @spec teme_to_geodetic(Sgp4Ex.TemeState.t(), DateTime.t(), keyword()) ::
           {:ok, %{latitude: float, longitude: float, altitude_km: float}}
-  def teme_to_geodetic({x_teme, y_teme, z_teme}, datetime) do
+  def teme_to_geodetic(%Sgp4Ex.TemeState{} = teme_state, datetime, opts \\ []) do
     # Step 1: TEME to ECEF
-    {x_ecef, y_ecef, z_ecef} = teme_to_ecef({x_teme, y_teme, z_teme}, datetime)
+    {x_ecef, y_ecef, z_ecef} = teme_to_ecef(teme_state, datetime, opts)
 
     # Step 2: ECEF to Geodetic
     ecef_to_geodetic({x_ecef, y_ecef, z_ecef})
@@ -46,23 +48,43 @@ defmodule Sgp4Ex.CoordinateSystems do
   @doc """
   Convert TEME coordinates to ECEF (Earth-Centered Earth-Fixed).
 
-  Uses simplified conversion without polar motion corrections.
+  By default uses GMAT (Greenwich Apparent Sidereal Time) which includes
+  nutation corrections for higher accuracy. Set use_gmst: true in opts
+  to use the simpler GMST (Greenwich Mean Sidereal Time) without nutation.
+
+  ## Options
+  - `:use_gmst` - Use GMST instead of GMAT (default: false)
   """
-  @spec teme_to_ecef({float, float, float}, DateTime.t()) :: {float, float, float}
-  def teme_to_ecef({x_teme, y_teme, z_teme}, datetime) do
-    # Calculate Greenwich Mean Sidereal Time
-    gmst_rad = calculate_gmst(datetime)
+  @spec teme_to_ecef(Sgp4Ex.TemeState.t(), DateTime.t(), keyword()) :: {float, float, float}
+  def teme_to_ecef(
+        %Sgp4Ex.TemeState{
+          position: {x_teme, y_teme, z_teme},
+          velocity: {vx_teme, vy_teme, vz_teme}
+        },
+        datetime,
+        opts \\ []
+      ) do
+    # Convert positions from km to meters for NIF
+    x_m = x_teme * 1000.0
+    y_m = y_teme * 1000.0
+    z_m = z_teme * 1000.0
+    vx_ms = vx_teme * 1000.0
+    vy_ms = vy_teme * 1000.0
+    vz_ms = vz_teme * 1000.0
 
-    # Rotation matrix from TEME to ECEF (rotation about Z-axis by GMST)
-    cos_gmst = cos(gmst_rad)
-    sin_gmst = sin(gmst_rad)
+    # Convert DateTime to tuple format for NIF
+    datetime_tuple = datetime_to_tuple(datetime)
 
-    # Apply rotation by GMST
-    x_ecef = cos_gmst * x_teme + sin_gmst * y_teme
-    y_ecef = -sin_gmst * x_teme + cos_gmst * y_teme
-    z_ecef = z_teme
+    # Use GMAT by default (matches Skyfield), or GMST if specified
+    {{x_ecef_m, y_ecef_m, z_ecef_m}, _} =
+      if Keyword.get(opts, :use_gmst, false) do
+        SGP4NIF.teme_to_ecef_gmst(x_m, y_m, z_m, vx_ms, vy_ms, vz_ms, datetime_tuple)
+      else
+        SGP4NIF.teme_to_ecef_gmat(x_m, y_m, z_m, vx_ms, vy_ms, vz_ms, datetime_tuple)
+      end
 
-    {x_ecef, y_ecef, z_ecef}
+    # Convert back to km
+    {x_ecef_m / 1000.0, y_ecef_m / 1000.0, z_ecef_m / 1000.0}
   end
 
   @doc """
@@ -125,65 +147,11 @@ defmodule Sgp4Ex.CoordinateSystems do
      }}
   end
 
-  # Calculate Greenwich Mean Sidereal Time (GMST) in radians
-  # Simplified version using linear approximation
-  defp calculate_gmst(datetime) do
-    # Convert to Julian Date
-    jd = datetime_to_julian_date(datetime)
-
-    # Calculate centuries since J2000
-    t = (jd - 2_451_545.0) / 36_525.0
-
-    # GMST at 0h UT1 (in degrees)
-    gmst0 = 100.46061837 + 36_000.770053608 * t + 0.000387933 * t * t
-
-    # Add rotation for time of day (including microseconds)
+  # Convert DateTime to tuple format for NIF
+  defp datetime_to_tuple(datetime) do
     microseconds = elem(datetime.microsecond, 0)
 
-    ut_hours =
-      datetime.hour + datetime.minute / 60.0 + datetime.second / 3600.0 +
-        microseconds / 3_600_000_000.0
-
-    gmst = gmst0 + 360.98564724 * ut_hours / 24.0
-
-    # Convert to radians and normalize to [0, 2π]
-    gmst_rad = gmst * pi() / 180.0
-    rem_float(gmst_rad, 2.0 * pi())
-  end
-
-  # Convert DateTime to Julian Date (Meeus algorithm, referenced to 0h UTC)
-  defp datetime_to_julian_date(datetime) do
-    year = datetime.year
-    month = datetime.month
-    day = datetime.day
-
-    # Handle January and February
-    a = floor((14 - month) / 12)
-    y = year + 4800 - a
-    m = month + 12 * a - 3
-
-    # Calculate Julian Day Number for 0h UTC (midnight)
-    # The -32045.5 (not -32045) ensures we reference midnight, not noon
-    jd_at_0h =
-      day + floor((153 * m + 2) / 5) + 365 * y + floor(y / 4) -
-        floor(y / 100) + floor(y / 400) - 32045.5
-
-    # Calculate fraction of day since midnight
-    microseconds = elem(datetime.microsecond, 0)
-
-    fraction_from_midnight =
-      datetime.hour / 24.0 +
-        datetime.minute / 1440.0 +
-        datetime.second / 86400.0 +
-        microseconds / 86_400_000_000.0
-
-    # Final Julian Date
-    jd_at_0h + fraction_from_midnight
-  end
-
-  # Floating point remainder that handles negative numbers correctly
-  defp rem_float(x, y) do
-    result = x - y * floor(x / y)
-    if result < 0, do: result + y, else: result
+    {{datetime.year, datetime.month, datetime.day},
+     {datetime.hour, datetime.minute, datetime.second, microseconds}}
   end
 end

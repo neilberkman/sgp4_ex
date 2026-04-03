@@ -1,7 +1,7 @@
 defmodule Mix.Tasks.Compile.Makesgp4 do
-  use Mix.Task.Compiler
-
   @shortdoc "Compiles C++ code for SGP4 NIF using Makefile"
+
+  use Mix.Task.Compiler
 
   @impl Mix.Task.Compiler
   def run(_args) do

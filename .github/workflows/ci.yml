@@ -1,0 +1,51 @@
+on:
+  push:
+  pull_request:
+name: Build & Test
+env:
+  MIX_ENV: test
+
+jobs:
+  test:
+    runs-on: ${{ matrix.os }}
+    name: ${{ matrix.os }} | OTP ${{ matrix.otp }} | Elixir ${{ matrix.elixir }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            otp: "27.0"
+            elixir: "1.18.0"
+          - os: ubuntu-24.04-arm
+            otp: "27.0"
+            elixir: "1.18.0"
+          - os: macos-latest
+            otp: "27.0"
+            elixir: "1.18.0"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Erlang & Elixir (Linux)
+        if: runner.os == 'Linux'
+        uses: erlef/setup-beam@v1
+        with:
+          otp-version: ${{ matrix.otp }}
+          elixir-version: ${{ matrix.elixir }}
+
+      - name: Install Erlang & Elixir (macOS)
+        if: runner.os == 'macOS'
+        run: |
+          brew install erlang elixir
+          mix local.hex --force
+          mix local.rebar --force
+
+      - name: Install build tools (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y build-essential
+
+      - run: mix deps.get
+      - run: mix compile
+      - run: mix test
+      - name: Skyfield parity test (0 ULP)
+        run: mix test --include skyfield_parity test/skyfield_parity_test.exs
